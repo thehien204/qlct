@@ -22,6 +22,10 @@ import {
 } from "./utils/googleSheets";
 import { LoginScreen } from "./components/LoginScreen";
 
+// CẤU HÌNH ĐƯỜNG DẪN GOOGLE APPS SCRIPT MẶC ĐỊNH CHO CẢ GIA ĐÌNH TẠI ĐÂY (NẾU DÙNG GITHUB PAGES)
+// Bạn dán đường dẫn Web App của bạn vào giữa hai dấu nháy kép, ví dụ: "https://script.google.com/macros/s/xxxx/exec"
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx3fpEkrt2sxZm6FeNieQOP8qcchQ9K0yjwVDD5mY1P79wrOabWJgYxWIEPOPYTHf7QXg/exec";
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "expenses" | "settlement" | "members" | "settings">("dashboard");
 
@@ -45,7 +49,7 @@ export default function App() {
   });
 
   // Google Sheets integration state (shared centrally to enable real-time reading and active synchronization)
-  const [gAppsScriptUrl, setGAppsScriptUrl] = useState(() => localStorage.getItem("gg_apps_script_url") || "");
+  const [gAppsScriptUrl, setGAppsScriptUrl] = useState(() => localStorage.getItem("gg_apps_script_url") || DEFAULT_APPS_SCRIPT_URL);
   const [sheetsSyncStatus, setSheetsSyncStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [sheetsSyncMessage, setSheetsSyncMessage] = useState("");
 
