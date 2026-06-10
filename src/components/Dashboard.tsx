@@ -82,6 +82,64 @@ export const Dashboard: React.FC<DashboardProps> = ({ members, expenses }) => {
     };
   });
 
+  // Local smart fallback advice generator
+  const generateLocalAdvice = (expensesList: Expense[], membersList: Member[], monthStr?: string) => {
+    const totalAmount = expensesList.reduce((sum, e) => sum + e.amount, 0);
+    
+    // Group categories
+    const categoryMap: Record<string, number> = {};
+    expensesList.forEach((e) => {
+      categoryMap[e.categoryId] = (categoryMap[e.categoryId] || 0) + e.amount;
+    });
+    
+    let topCategoryName = "Chi tiêu chung";
+    let topCategoryAmount = 0;
+    
+    const DEFAULT_CATEGORIES_MAP: Record<string, string> = {
+      "food": "Ăn uống & Chợ búa 🍲",
+      "utilities": "Điện, Nước & Internet ⚡",
+      "education": "Học tập & Giáo dục 📚",
+      "shopping": "Sắm sửa & Đồ gia dụng 🛒",
+      "health": "Y tế & Sức khỏe 🏥",
+      "travel": "Xăng xe & Đi lại 🚗",
+      "entertainment": "Vui chơi & Giải trí 🎮",
+      "others": "Chi phí khác 💸"
+    };
+    
+    Object.entries(categoryMap).forEach(([catId, amount]) => {
+      if (amount > topCategoryAmount) {
+        topCategoryAmount = amount;
+        topCategoryName = DEFAULT_CATEGORIES_MAP[catId] || catId;
+      }
+    });
+
+    const formatVNDLocal = (num: number) => {
+      return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") + " VND";
+    };
+
+    let summary = `Cả nhà đã cùng nhau chi tiêu tổng cộng ${formatVNDLocal(totalAmount)} trong ${monthStr ? `tháng ${monthStr.substring(5)}/${monthStr.substring(0, 4)}` : "thời gian qua"}. Hãy tiếp tục đồng lòng quản lý tài chính thật tốt nhé!`;
+    if (totalAmount > 15000000) {
+      summary = `Tháng này gia đình mình chi tiêu khá mặn với tổng cộng ${formatVNDLocal(totalAmount)}. Tuy nhiên nhờ cùng nhau san sẻ nên mọi gánh nặng đều nhẹ đi rất nhiều, cả nhà tuyệt vời lắm! ✨`;
+    } else if (totalAmount > 0) {
+      summary = `Gia đình mình chi tiêu cực kỳ khoa học và tiết kiệm với tổng số tiền ${formatVNDLocal(totalAmount)}. Hãy duy trì phong độ ấm áp và sòng phẳng này nhé! 🌸`;
+    }
+
+    let categoriesAdvice = `Khoản chi nổi bật nhất của gia đình mình là dành cho "${topCategoryName}" với tổng cộng ${formatVNDLocal(topCategoryAmount)}. Đây là nhu cầu hoàn toàn thiết thực, việc chia đều sẽ giúp các thành viên cảm giác rất thoải mái và bớt áp lực hơn.`;
+    if (topCategoryAmount > 5000000) {
+      categoriesAdvice = `Gia đình đang dồn lực khá lớn cho nhóm "${topCategoryName}" (${formatVNDLocal(topCategoryAmount)}). Để tối ưu, cả nhà có thể lập kế hoạch dự chi cụ thể trước mỗi tuần, ưu tiên tự nấu ăn tại nhà hoặc sắm sửa đồ gia dụng theo đợt khuyến mãi lớn để tiết giảm từ 10-15%.`;
+    }
+
+    const savingTips = `1. **Sắp xếp mua sắm sỉ**: Nên mua chung các mặt hàng gia dụng, thực phẩm khô theo lốc lớn tại siêu thị để được hưởng mức chiết khấu tốt.\n2. **Tận dụng các gói điện gia đình**: Điều chỉnh nhiệt độ điều hòa ở mức 26 độ C và tắt hẳn các thiết bị điện khi ra ngoài để tiết kiệm tối thiểu 10% hóa đơn tháng này.\n3. **Họp mặt gia đình định kỳ**: Dành khoảng 10 phút cuối tháng để cùng nhìn lại sổ tay chi tiêu này, khen ngợi thành viên tiết kiệm tài giỏi nhất!`;
+
+    return {
+      summary: "💡 (Cố vấn cục bộ) " + summary,
+      categoriesAdvice,
+      savingTips,
+      debtAdvice: "",
+      reminders: []
+    };
+  };
+
   // Fetch AI Insight from server API
   const handleFetchAiInsight = async () => {
     if (expenses.length === 0) return;
@@ -98,14 +156,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ members, expenses }) => {
           debts: [], // not needing specific debts for saving tips
         }),
       });
-      const data = await response.json();
       if (response.ok) {
+        const data = await response.json();
         setAiInsight(data);
       } else {
-        setAiError(data.error || "Không kết nối được cấu hình AI.");
+        const localData = generateLocalAdvice(expenses, members, selectedMonth);
+        setAiInsight(localData);
       }
     } catch (err: any) {
-      setAiError("Máy chủ không hỗ trợ AI hoặc panel Secrets chưa nạp khóa GEMINI_API_KEY.");
+      const localData = generateLocalAdvice(expenses, members, selectedMonth);
+      setAiInsight(localData);
     } finally {
       setLoadingAi(false);
     }
