@@ -1,0 +1,6 @@
+{
+  "name": "Quản Lý Chi Tiêu Gia Đình",
+  "description": "Hệ thống quản lý chi tiêu gia đình 5 người, phân chia tiền hàng tháng và nhắc nợ thông minh qua Facebook Messenger",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
