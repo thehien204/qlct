@@ -151,6 +151,7 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   const handlePullFromSheets = async () => {
+    sheetId = "1lMPpsHShv3OZ7rQqg0gNdcNo5YauPbxbM-_F24ta75w"
     if (!gAccessToken || !sheetId) {
       setSheetsError("Vui lòng nhập đầy đủ Google Sheet ID và Access Token để tải dữ liệu.");
       return;
