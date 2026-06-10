@@ -112,7 +112,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
-                  className={`relative p-5 rounded-xl border transition-all duration-200 flex flex-col justify-between h-72 ${
+                  className={`relative p-5 rounded-xl border transition-all duration-200 flex flex-col justify-between min-h-[18rem] md:h-72 ${
                     isEditing
                       ? "border-blue-500 bg-[#1e1e1e] shadow-md ring-1 ring-blue-900/30"
                       : "border-[#222] bg-[#0F0F0F] hover:bg-[#141414] hover:shadow-md hover:border-[#333]"
@@ -263,7 +263,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="relative p-5 rounded-xl border border-emerald-500 bg-[#1e1e1e] shadow-md ring-1 ring-emerald-950/30 flex flex-col justify-between h-72"
+                className="relative p-5 rounded-xl border border-emerald-500 bg-[#1e1e1e] shadow-md ring-1 ring-emerald-950/30 flex flex-col justify-between min-h-[18rem] md:h-72"
               >
                 <div className="space-y-2 flex-1 flex flex-col justify-between">
                   <div className="space-y-1">
@@ -335,7 +335,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
                 onClick={() => setIsAdding(true)}
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
-                className="p-5 rounded-xl border border-dashed border-[#333] hover:border-emerald-500/50 hover:bg-emerald-950/5 text-gray-500 hover:text-emerald-400 cursor-pointer flex flex-col items-center justify-center gap-3 transition-all duration-200 h-72 group"
+                className="p-5 rounded-xl border border-dashed border-[#333] hover:border-emerald-500/50 hover:bg-emerald-950/5 text-gray-500 hover:text-emerald-400 cursor-pointer flex flex-col items-center justify-center gap-3 transition-all duration-200 min-h-[18rem] md:h-72 group"
               >
                 <div className="w-12 h-12 rounded-full border border-dashed border-[#444] group-hover:border-emerald-500 flex items-center justify-center transition-colors">
                   <Plus className="w-6 h-6 text-gray-400 group-hover:text-emerald-400" />

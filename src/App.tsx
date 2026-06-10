@@ -208,44 +208,44 @@ export default function App() {
       
       {/* Visual Navigation Header Banner */}
       <header className="bg-[#0F0F0F] border-b border-[#222] sticky top-0 z-30 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-emerald-600 text-white p-2.5 rounded-xl shadow-inner">
-              <PiggyBank className="w-6 h-6" />
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="bg-emerald-600 text-white p-2 sm:p-2.5 rounded-xl shadow-inner shrink-0">
+              <PiggyBank className="w-5 h-5 sm:w-6 h-6" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight text-white flex items-center gap-1.5 uppercase">
-                Sổ Thu Chi Gia Đình {members.length > 0 ? `(${members.length} người)` : ""}
-                <span className="text-[9px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-bold">PRO</span>
+            <div className="min-w-0">
+              <h1 className="text-xs sm:text-lg font-bold tracking-tight text-white flex items-center gap-1.5 uppercase truncate">
+                Sổ Thu Chi {members.length > 0 ? `(${members.length} người)` : ""}
+                <span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.5 rounded-full font-bold">PRO</span>
               </h1>
-              <p className="text-[11px] text-gray-500 font-medium font-sans">
+              <p className="text-[11px] text-gray-500 font-medium font-sans hidden sm:block">
                 Bộ máy giải toán phân chia tiền tháng & Nhắc nợ Facebook Messenger AI thông minh
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             {/* Google Sheets Active Database sync status */}
             {gAppsScriptUrl ? (
-              <div id="sheets-sync-header-badge" className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/20 border border-emerald-900/30 text-emerald-400 text-xs font-semibold">
+              <div id="sheets-sync-header-badge" className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-emerald-950/20 border border-emerald-900/30 text-emerald-400 text-[10px] sm:text-xs font-semibold">
                 {sheetsSyncStatus === "loading" ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" />
                 ) : sheetsSyncStatus === "error" ? (
-                  <CloudOff className="w-3.5 h-3.5 text-red-400" />
+                  <CloudOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-red-400" />
                 ) : (
-                  <Database className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                  <Database className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 animate-pulse" />
                 )}
-                <span className="max-w-[200px] truncate">
-                  {sheetsSyncStatus === "loading" ? "Đang đồng bộ Sheets..." : sheetsSyncStatus === "error" ? "Lỗi Sheets" : "Sử dụng Google Sheets"}
+                <span className="max-w-[70px] sm:max-w-[200px] truncate">
+                  {sheetsSyncStatus === "loading" ? "Đang đồng bộ..." : sheetsSyncStatus === "error" ? "Lỗi Sheets" : "Google Sheets"}
                 </span>
                 {sheetsSyncStatus === "success" && (
-                  <span className="text-[10px] text-emerald-500 font-normal pl-1 border-l border-emerald-850/40">Đã cập nhật</span>
+                  <span className="text-[10px] text-emerald-500 font-normal pl-1 border-l border-emerald-850/40 hidden xs:inline">Cập nhật</span>
                 )}
               </div>
             ) : (
-              <div id="sheets-offline-header-badge" className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#141414] border border-[#222] text-gray-500 text-xs font-medium">
-                <CloudOff className="w-3.5 h-3.5" />
-                <span>Ngoại tuyến (Lưu cục bộ)</span>
+              <div id="sheets-offline-header-badge" className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-[#141414] border border-[#222] text-gray-500 text-[10px] sm:text-xs font-medium">
+                <CloudOff className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                <span className="max-w-[70px] sm:max-w-[150px] truncate">Ngoại tuyến</span>
               </div>
             )}
 
@@ -260,11 +260,11 @@ export default function App() {
             {/* Logout button */}
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/20 border border-rose-900/35 hover:bg-rose-950/40 text-rose-450 text-xs font-bold transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              className="flex items-center gap-1 py-1.5 px-2 sm:px-3 sm:py-1.5 rounded-xl bg-rose-955/20 border border-rose-900/35 hover:bg-rose-955/40 text-rose-450 text-[10px] sm:text-xs font-bold transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
               title="Đăng xuất khỏi phiên làm việc"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Đăng xuất</span>
+              <LogOut className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <span className="hidden sm:inline">Đăng xuất</span>
             </button>
           </div>
         </div>
