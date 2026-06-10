@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { downloadFamilyExcel } from "../utils/excel";
 import { 
-  createNewExpenseSpreadsheet, 
   syncDataToGoogleSheets, 
   loadDataFromGoogleSheets 
 } from "../utils/googleSheets";
@@ -24,10 +23,8 @@ interface SettingsProps {
   pageId: string;
   onSaveFbConfig: (token: string, id: string) => void;
   onImportData: (members: Member[], expenses: Expense[]) => void;
-  sheetId: string;
-  setSheetId: (val: string) => void;
-  gAccessToken: string;
-  setGAccessToken: (val: string) => void;
+  gAppsScriptUrl: string;
+  setGAppsScriptUrl: (val: string) => void;
   sheetsSyncStatus: "idle" | "loading" | "success" | "error";
   setSheetsSyncStatus: (val: "idle" | "loading" | "success" | "error") => void;
   sheetsSyncMessage: string;
@@ -41,10 +38,8 @@ export const Settings: React.FC<SettingsProps> = ({
   pageId,
   onSaveFbConfig,
   onImportData,
-  sheetId,
-  setSheetId,
-  gAccessToken,
-  setGAccessToken,
+  gAppsScriptUrl,
+  setGAppsScriptUrl,
   sheetsSyncStatus,
   setSheetsSyncStatus,
   sheetsSyncMessage,
@@ -81,20 +76,45 @@ export const Settings: React.FC<SettingsProps> = ({
 
   // Keep localStorage perfectly aligned
   useEffect(() => {
-    if (sheetId) {
-      localStorage.setItem("gg_spreadsheet_id", sheetId.trim());
+    if (gAppsScriptUrl) {
+      localStorage.setItem("gg_apps_script_url", gAppsScriptUrl.trim());
     } else {
-      localStorage.removeItem("gg_spreadsheet_id");
+      localStorage.removeItem("gg_apps_script_url");
     }
-  }, [sheetId]);
+  }, [gAppsScriptUrl]);
 
-  useEffect(() => {
-    if (gAccessToken) {
-      localStorage.setItem("gg_access_token", gAccessToken.trim());
-    } else {
-      localStorage.removeItem("gg_access_token");
+  // Server-side configuration persistence states
+  const [serverSaveLoading, setServerSaveLoading] = useState(false);
+  const [serverSaveSuccess, setServerSaveSuccess] = useState("");
+  const [serverSaveError, setServerSaveError] = useState("");
+
+  const handleSaveToServer = async () => {
+    setServerSaveLoading(true);
+    setServerSaveSuccess("");
+    setServerSaveError("");
+    try {
+      const response = await fetch("/api/family-config", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          gAppsScriptUrl: gAppsScriptUrl.trim(),
+        }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setServerSaveSuccess("Đã lưu cấu hình Google Apps Script Web App URL cố định lên máy chủ cho cả gia đình thành công!");
+        setTimeout(() => setServerSaveSuccess(""), 4000);
+      } else {
+        setServerSaveError(data.error || "Lỗi khi lưu cấu hình lên máy chủ.");
+      }
+    } catch (err: any) {
+      setServerSaveError("Không thể kết nối đến máy chủ backend để lưu cấu hình.");
+    } finally {
+      setServerSaveLoading(false);
     }
-  }, [gAccessToken]);
+  };
 
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,32 +124,9 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   // Google Sheets Actions
-  const handleCreateNewSheet = async () => {
-    if (!gAccessToken) {
-      setSheetsError("Vui lòng cung cấp mã Access Token hợp lệ của tài khoản Google để thực hiện.");
-      return;
-    }
-    setSheetsLoading(true);
-    setSheetsError("");
-    setSheetsSuccess("");
-    try {
-      const newId = await createNewExpenseSpreadsheet(gAccessToken.trim());
-      setSheetId(newId);
-      localStorage.setItem("gg_spreadsheet_id", newId);
-      
-      // Seed immediately so they don't see raw structural errors on empty sheets
-      await syncDataToGoogleSheets(gAccessToken.trim(), newId, members, expenses);
-      setSheetsSuccess("Khởi tạo Bảng tính thành công trên Google Drive và tải nạp dữ liệu gia đình ban đầu!");
-    } catch (err: any) {
-      setSheetsError(err.message || "Lỗi không xác định khi tạo Bảng tính.");
-    } finally {
-      setSheetsLoading(false);
-    }
-  };
-
   const handlePushToSheets = async () => {
-    if (!gAccessToken || !sheetId) {
-      setSheetsError("Vui lòng nhập cả Google Sheet ID và Access Token để đồng bộ.");
+    if (!gAppsScriptUrl) {
+      setSheetsError("Vui lòng nhập đường dẫn Google Apps Script Web App URL để đồng bộ.");
       return;
     }
     const confirmed = window.confirm(
@@ -141,7 +138,7 @@ export const Settings: React.FC<SettingsProps> = ({
     setSheetsError("");
     setSheetsSuccess("");
     try {
-      await syncDataToGoogleSheets(gAccessToken.trim(), sheetId.trim(), members, expenses);
+      await syncDataToGoogleSheets(gAppsScriptUrl.trim(), members, expenses);
       setSheetsSuccess(`Đồng bộ dữ liệu thành công! Đã đẩy ${members.length} thành viên và ${expenses.length} giao dịch lên Bảng tính.`);
     } catch (err: any) {
       setSheetsError(err.message || "Lỗi khi cập nhật dữ liệu.");
@@ -151,16 +148,15 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   const handlePullFromSheets = async () => {
-    sheetId = "1lMPpsHShv3OZ7rQqg0gNdcNo5YauPbxbM-_F24ta75w"
-    if (!gAccessToken || !sheetId) {
-      setSheetsError("Vui lòng nhập đầy đủ Google Sheet ID và Access Token để tải dữ liệu.");
+    if (!gAppsScriptUrl) {
+      setSheetsError("Vui lòng nhập đường dẫn Google Apps Script Web App URL để tải dữ liệu.");
       return;
     }
     setSheetsLoading(true);
     setSheetsError("");
     setSheetsSuccess("");
     try {
-      const data = await loadDataFromGoogleSheets(gAccessToken.trim(), sheetId.trim());
+      const data = await loadDataFromGoogleSheets(gAppsScriptUrl.trim());
       if (data.members.length > 0) {
         onImportData(data.members, data.expenses);
         setSheetsSuccess(`Lấy dữ liệu thành công! Đã nạp về ${data.members.length} thành viên gia đình và ${data.expenses.length} giao dịch chi tiêu.`);
@@ -388,45 +384,23 @@ export const Settings: React.FC<SettingsProps> = ({
           <div className="space-y-4">
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                <Key className="w-3 h-3 text-yellow-500" /> Google OAuth Access Token
+                <Key className="w-3 h-3 text-yellow-500" /> Đường dẫn Google Apps Script Web App URL
               </label>
               <input
-                id="sheets-access-token"
-                type="password"
-                value={gAccessToken}
-                onChange={(e) => setGAccessToken(e.target.value)}
+                id="sheets-apps-script-url"
+                type="text"
+                value={gAppsScriptUrl}
+                onChange={(e) => setGAppsScriptUrl(e.target.value)}
                 disabled={!isAdmin}
-                placeholder={!isAdmin ? "🔒 Mã bảo mật đã khóa cố định" : "Nhập Access Token mới (ya29.a0Ax...)"}
-                className={`w-full text-xs px-3.5 py-2.5 bg-[#0F0F0F] border border-[#222] rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-[#141414] text-white font-mono placeholder-gray-650 ${
+                placeholder={!isAdmin ? "🔒 Đường dẫn đã khóa cố định" : "Dán link script (https://script.google.com/...)"}
+                className={`w-full text-xs px-3.5 py-2.5 bg-[#0F0F0F] border border-[#222] rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-[#141414] text-white font-mono placeholder-gray-650 ${
                   !isAdmin ? "opacity-65 cursor-not-allowed select-none bg-black/40" : ""
                 }`}
               />
               <p className="text-[9px] text-gray-500 mt-1">
                 {isAdmin 
-                  ? "Cung cấp Access Token mới từ Google OAuth Playground." 
+                  ? "Dán đường dẫn Web App được triển khai từ Google Apps Script." 
                   : "🔒 Đã mã hóa bảo mật phục vụ đồng bộ tự động."}
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1.5">
-                Bảng tính ID (Google Spreadsheet ID)
-              </label>
-              <input
-                id="sheets-spreadsheet-id"
-                type="text"
-                value={sheetId}
-                onChange={(e) => setSheetId(e.target.value)}
-                disabled={!isAdmin}
-                placeholder={!isAdmin ? "🔒 ID bảng tính đã khóa cố định" : "Ví dụ: 1a2b3c4d5e..."}
-                className={`w-full text-xs px-3.5 py-2.5 bg-[#0F0F0F] border border-[#222] rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-[#141414] text-white font-mono placeholder-gray-650 ${
-                  !isAdmin ? "opacity-65 cursor-not-allowed select-none bg-black/40" : ""
-                }`}
-              />
-              <p className="text-[9px] text-gray-500 mt-1">
-                {isAdmin
-                  ? "Mã ID duy nhất của tệp Google Sheets gia đình."
-                  : "🔒 ID bảng tính dùng chung của toàn gia đình."}
               </p>
             </div>
           </div>
@@ -435,29 +409,18 @@ export const Settings: React.FC<SettingsProps> = ({
             <div className="space-y-2">
               <h4 className="font-bold text-xs text-white flex items-center gap-1">
                 {!isAdmin && <span className="text-gray-500">🔒</span>}
-                Thao tác Truy xuất & Đồng bộ thủ công
+                Thao tác Truy xuất & Đồng bộ dữ liệu
               </h4>
               <p className="text-[10px] text-gray-400">
-                Thao tác tạo mới hoặc ghi đè đồng bộ thủ công chỉ dành cho Quản trị viên. Người dùng có thể Tải dữ liệu bất cứ lúc nào.
+                Thao tác ghi đè đồng bộ lên Google Sheets chỉ dành cho Quản trị viên. Người dùng có thể Tải dữ liệu bất cứ lúc nào để cập nhật cục bộ.
               </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
-                id="btn-sheets-create"
-                onClick={handleCreateNewSheet}
-                disabled={sheetsLoading || !isAdmin}
-                className="bg-[#1A1A1A] hover:bg-[#252525] text-white border border-[#333] py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                title={!isAdmin ? "Yêu cầu mở khóa quản trị viên" : ""}
-              >
-                {sheetsLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5 text-blue-400" />}
-                Tạo Bảng Tính Mới
-              </button>
-
-              <button
                 id="btn-sheets-push"
                 onClick={handlePushToSheets}
-                disabled={sheetsLoading || !sheetId || !isAdmin}
+                disabled={sheetsLoading || !gAppsScriptUrl || !isAdmin}
                 className="bg-blue-900/10 hover:bg-blue-900/20 text-blue-400 border border-blue-900/25 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                 title={!isAdmin ? "Yêu cầu mở khóa quản trị viên" : ""}
               >
@@ -468,12 +431,24 @@ export const Settings: React.FC<SettingsProps> = ({
               <button
                 id="btn-sheets-pull"
                 onClick={handlePullFromSheets}
-                disabled={sheetsLoading || !sheetId}
-                className="bg-emerald-950/30 hover:bg-emerald-950/55 text-emerald-400 border border-emerald-900/40 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 sm:col-span-2"
+                disabled={sheetsLoading || !gAppsScriptUrl}
+                className="bg-[#1A1A1A] hover:bg-[#252525] text-white border border-[#333] py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
               >
                 {sheetsLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                Tải Bảng xuống làm Database (Cập Nhật Ngay)
+                Tải Bảng xuống làm Database
               </button>
+
+              {isAdmin && (
+                <button
+                  id="btn-sheets-save-to-server"
+                  onClick={handleSaveToServer}
+                  disabled={serverSaveLoading || !gAppsScriptUrl}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500/30 py-2.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 sm:col-span-2 shadow-lg shadow-emerald-900/15 active:scale-[0.98]"
+                >
+                  {serverSaveLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  LƯU CỐ ĐỊNH CẤU HÌNH LÊN MÁY CHỦ CHO CẢ GIA ĐÌNH
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -547,16 +522,140 @@ export const Settings: React.FC<SettingsProps> = ({
           </div>
         )}
 
+        {serverSaveSuccess && (
+          <div className="p-3 bg-emerald-950/25 border border-emerald-900/40 rounded-xl text-emerald-400 text-xs flex items-start gap-1.5 leading-relaxed">
+            <Check className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold font-sans">Lưu cấu hình thành công!</p>
+              <p className="text-[11px] text-gray-300 mt-0.5">{serverSaveSuccess}</p>
+            </div>
+          </div>
+        )}
+
+        {serverSaveError && (
+          <div className="p-3 bg-rose-950/25 border border-rose-900/40 rounded-xl text-rose-400 text-xs flex items-start gap-1.5 leading-relaxed">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">Lỗi lưu cấu hình máy chủ</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">{serverSaveError}</p>
+            </div>
+          </div>
+        )}
+
         {isAdmin && (
-          <div className="text-[11px] text-gray-500 bg-[#0F0F0F] rounded-xl p-3 border border-[#222]">
-            💡 <strong>Hướng dẫn LẤY NHANH Access Token chỉ trong 30 giây:</strong>
-            <ol className="list-decimal pl-4.5 space-y-1 mt-1.5 text-gray-400">
-              <li>Truy cập công cụ test chính thức của Google: <a href="https://developers.google.com/oauthplayground" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline inline-flex items-center gap-0.5 font-semibold">Google OAuth Playground <Link className="w-2.5 h-2.5" /></a></li>
-              <li>Ở bảng cấu hính danh sách quyền bên trái, tìm danh mục <strong>Google Sheets API v4</strong> và click chọn scope <code className="bg-[#141414] px-1 text-gray-300 border border-[#222] rounded text-[10px]">.../auth/spreadsheets</code></li>
-              <li>Click tiếp danh mục <strong>Google Drive API v3</strong>, chọn scope <code className="bg-[#141414] px-1 text-gray-300 border border-[#222] rounded text-[10px]">.../auth/drive.file</code></li>
-              <li>Bấm nút xanh lá <strong>Authorize APIs</strong> và cấp quyền tài khoản Google của bạn.</li>
-              <li>Hệ thống chuyển qua Bước 2, bạn bấm nút màu xanh dương <strong>Exchange authorization code for tokens</strong>.</li>
-              <li>Sao chép toàn bộ dòng mã dài ở mục <strong>Access Token</strong> rồi dán vào ô nhập liệu ở trên!</li>
+          <div className="text-[11px] text-gray-500 bg-[#0F0F0F] rounded-xl p-4 border border-[#222] space-y-3">
+            💡 <strong>Hướng dẫn thiết lập Google Apps Script để kết nối Vĩnh viễn & Miễn phí:</strong>
+            <ol className="list-decimal pl-4.5 space-y-1.5 text-gray-400">
+              <li>Mở file Google Spreadsheet của gia đình bạn.</li>
+              <li>Trên thanh menu, chọn <strong>Tiện ích mở rộng (Extensions)</strong> &rarr; <strong>Apps Script</strong>.</li>
+              <li>Xóa sạch mã mặc định trong khung soạn thảo và dán đoạn code phía dưới vào:</li>
+            </ol>
+
+            <div className="relative">
+              <pre className="bg-[#050505] p-3 rounded-lg border border-[#222] text-[10px] text-emerald-400 overflow-x-auto max-h-60 font-mono select-all">
+{`function doGet(e) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var memberSheet = ss.getSheetByName("ThanhVien");
+  var members = [];
+  if (memberSheet) {
+    var memberData = memberSheet.getDataRange().getValues();
+    for (var i = 1; i < memberData.length; i++) {
+      var row = memberData[i];
+      if (row[0] && row[1]) {
+        members.push({
+          id: String(row[0]),
+          name: String(row[1]),
+          role: String(row[2] || ""),
+          avatarColor: String(row[3] || ""),
+          messengerLink: String(row[4] || ""),
+          messengerId: String(row[5] || "")
+        });
+      }
+    }
+  }
+  
+  var expenseSheet = ss.getSheetByName("ChiTieu");
+  var expenses = [];
+  if (expenseSheet) {
+    var expenseData = expenseSheet.getDataRange().getValues();
+    for (var i = 1; i < expenseData.length; i++) {
+      var row = expenseData[i];
+      if (row[0] && row[1]) {
+        expenses.push({
+          id: String(row[0]),
+          title: String(row[1]),
+          amount: Number(row[2]) || 0,
+          categoryId: String(row[3] || "others"),
+          date: String(row[4] || ""),
+          paidById: String(row[5] || ""),
+          beneficiaryIds: row[6] ? String(row[6]).split(",").map(function(id) { return id.trim(); }).filter(Boolean) : [],
+          notes: String(row[7] || ""),
+          createdAt: Number(row[8]) || Date.now()
+        });
+      }
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ members: members, expenses: expenses }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  try {
+    var postData = JSON.parse(e.postData.contents);
+    var members = postData.members || [];
+    var expenses = postData.expenses || [];
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    var memberSheet = ss.getSheetByName("ThanhVien");
+    if (!memberSheet) memberSheet = ss.insertSheet("ThanhVien");
+    memberSheet.clear();
+    memberSheet.appendRow(["ID", "Name", "Role", "AvatarColor", "MessengerLink", "MessengerId"]);
+    for (var i = 0; i < members.length; i++) {
+      var m = members[i];
+      memberSheet.appendRow([m.id, m.name, m.role, m.avatarColor, m.messengerLink, m.messengerId]);
+    }
+    
+    var expenseSheet = ss.getSheetByName("ChiTieu");
+    if (!expenseSheet) expenseSheet = ss.insertSheet("ChiTieu");
+    expenseSheet.clear();
+    expenseSheet.appendRow(["ID", "Title", "Amount", "CategoryId", "Date", "PaidById", "BeneficiaryIds", "Notes", "CreatedAt"]);
+    for (var i = 0; i < expenses.length; i++) {
+      var exp = expenses[i];
+      expenseSheet.appendRow([
+        exp.id,
+        exp.title,
+        exp.amount,
+        exp.categoryId,
+        exp.date,
+        exp.paidById,
+        (exp.beneficiaryIds || []).join(","),
+        exp.notes,
+        exp.createdAt
+      ]);
+    }
+    return ContentService.createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}`}
+              </pre>
+            </div>
+
+            <ol className="list-decimal pl-4.5 space-y-1.5 text-gray-400" start={4}>
+              <li>Nhấn biểu tượng **Lưu (Save)** (hình đĩa mềm) hoặc bấm `Ctrl + S`.</li>
+              <li>Bấm nút **Triển khai (Deploy)** ở góc trên bên phải &rarr; Chọn **Triển khai mới (New deployment)**.</li>
+              <li>Click biểu tượng bánh răng bên cạnh "Chọn loại cấu hình" &rarr; Chọn **Ứng dụng Web (Web app)**.</li>
+              <li>Cấu hình các tùy chọn sau:
+                <ul className="list-disc pl-5 mt-1 space-y-0.5 text-gray-500">
+                  <li>Mô tả: Nhập mô tả (ví dụ: <code className="bg-[#141414] px-1 py-0.5 rounded text-[10px]">Family Spend API</code>)</li>
+                  <li>Thực thi dưới dạng (Execute as): Chọn **Tôi (Tài khoản của tôi - Me)**.</li>
+                  <li>Ai có quyền truy cập (Who has access): Chọn **Bất kỳ ai (Anyone)**.</li>
+                </ul>
+              </li>
+              <li>Nhấn nút **Triển khai (Deploy)**. Nếu Google yêu cầu cấp quyền (Authorize access), hãy nhấn **Cấp quyền** và chọn tài khoản Google của bạn (nếu báo cảnh báo an toàn của Google, bấm vào **Nâng cao / Advanced** &rarr; chọn **Đi tới dự án không an toàn** để đồng ý).</li>
+              <li>Sao chép đường dẫn ở mục **URL của ứng dụng web** (Web app URL), quay lại đây dán vào ô **Đường dẫn Google Apps Script Web App URL** ở trên và nhấn nút **Lưu Cố Định Lên Máy Chủ** là xong!</li>
             </ol>
           </div>
         )}

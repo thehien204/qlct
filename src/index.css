@@ -29,3 +29,31 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #333333;
 }
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(1.5deg); }
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.25; transform: scale(1.03); }
+}
+
+@keyframes glimmer {
+  0%, 100% { opacity: 0.35; filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.3)); }
+  50% { opacity: 0.75; filter: drop-shadow(0 0 20px rgba(16, 185, 129, 0.6)); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 8s ease-in-out infinite;
+}
+
+.animate-glimmer {
+  animation: glimmer 3.3s ease-in-out infinite;
+}
+

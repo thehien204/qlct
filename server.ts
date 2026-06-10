@@ -6,6 +6,7 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
+import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 
@@ -322,6 +323,33 @@ app.post("/api/send-messenger", async (req, res) => {
   } catch (error: any) {
     console.error("Facebook Send API Error:", error);
     res.status(500).json({ error: error.message || "Lỗi hệ thống khi gửi tin nhắn Facebook." });
+  }
+});
+
+const configPath = path.join(process.cwd(), "family-config.json");
+
+// API Route: Get shared family configuration
+app.get("/api/family-config", (req, res) => {
+  try {
+    if (fs.existsSync(configPath)) {
+      const data = fs.readFileSync(configPath, "utf-8");
+      return res.json(JSON.parse(data));
+    }
+  } catch (error) {
+    console.error("Error reading family-config.json", error);
+  }
+  return res.json({ gAppsScriptUrl: "" });
+});
+
+// API Route: Save shared family configuration
+app.post("/api/family-config", (req, res) => {
+  try {
+    const { gAppsScriptUrl } = req.body;
+    fs.writeFileSync(configPath, JSON.stringify({ gAppsScriptUrl }, null, 2), "utf-8");
+    return res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error writing family-config.json", error);
+    return res.status(500).json({ error: error.message || "Không thể lưu cấu hình" });
   }
 });
 

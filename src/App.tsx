@@ -13,13 +13,14 @@ import { Dashboard } from "./components/Dashboard";
 import { Settings } from "./components/Settings";
 import { 
   PiggyBank, LayoutDashboard, Receipt, RefreshCw, UserCheck, Sliders, Sparkles,
-  Database, CloudLightning, CloudOff, Check, AlertCircle
+  Database, CloudLightning, CloudOff, Check, AlertCircle, LogOut
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   loadDataFromGoogleSheets, 
   syncDataToGoogleSheets 
 } from "./utils/googleSheets";
+import { LoginScreen } from "./components/LoginScreen";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "expenses" | "settlement" | "members" | "settings">("dashboard");
@@ -44,10 +45,42 @@ export default function App() {
   });
 
   // Google Sheets integration state (shared centrally to enable real-time reading and active synchronization)
-  const [sheetId, setSheetId] = useState(() => localStorage.getItem("gg_spreadsheet_id") || "");
-  const [gAccessToken, setGAccessToken] = useState(() => localStorage.getItem("gg_access_token") || "");
+  const [gAppsScriptUrl, setGAppsScriptUrl] = useState(() => localStorage.getItem("gg_apps_script_url") || "");
   const [sheetsSyncStatus, setSheetsSyncStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [sheetsSyncMessage, setSheetsSyncMessage] = useState("");
+
+  // Authentication state
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem("family_auth_login") === "true";
+  });
+
+  // Fetch shared family configuration on mount or login
+  useEffect(() => {
+    const fetchFamilyConfig = async () => {
+      if (!isLoggedIn) return;
+      try {
+        const response = await fetch("/api/family-config");
+        if (response.ok) {
+          const data = await response.json();
+          if (data.gAppsScriptUrl) {
+            setGAppsScriptUrl(data.gAppsScriptUrl);
+            localStorage.setItem("gg_apps_script_url", data.gAppsScriptUrl);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch family configuration from server, using local fallback.", err);
+      }
+    };
+
+    fetchFamilyConfig();
+  }, [isLoggedIn]);
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    localStorage.removeItem("family_auth_login");
+    localStorage.removeItem("gg_apps_script_url");
+    setGAppsScriptUrl("");
+  };
 
   // Sync to local storage
   useEffect(() => {
@@ -61,12 +94,12 @@ export default function App() {
   // Google Sheets Auto-Pull on initial load or credentials change
   useEffect(() => {
     const autoFetchFromSheets = async () => {
-      if (!sheetId || !gAccessToken) return;
+      if (!gAppsScriptUrl) return;
       
       setSheetsSyncStatus("loading");
       setSheetsSyncMessage("Đang tự động nạp dữ liệu từ Google Sheets...");
       try {
-        const data = await loadDataFromGoogleSheets(gAccessToken, sheetId);
+        const data = await loadDataFromGoogleSheets(gAppsScriptUrl);
         
         // If sheet is completely empty, keep things empty to match sheets perfectly
         if (data.members.length === 0) {
@@ -84,20 +117,20 @@ export default function App() {
       } catch (err: any) {
         console.warn("Initial sheets pull error:", err);
         setSheetsSyncStatus("error");
-        setSheetsSyncMessage(`Tải tự động thất bại: ${err.message || "Kiểm tra Access Token"}. Hệ thống đang chạy Ngoại tuyến.`);
+        setSheetsSyncMessage(`Tải tự động thất bại: ${err.message || "Kiểm tra URL Apps Script"}. Hệ thống đang chạy Ngoại tuyến.`);
       }
     };
     autoFetchFromSheets();
-  }, [sheetId, gAccessToken]);
+  }, [gAppsScriptUrl]);
 
   // Write-through helper function to sync to Sheets in background
   const syncWithSheetsInBg = async (updatedMembers: Member[], updatedExpenses: Expense[]) => {
-    if (!gAccessToken || !sheetId) return;
+    if (!gAppsScriptUrl) return;
     
     setSheetsSyncStatus("loading");
     setSheetsSyncMessage("Đang tự động ghi đè đồng bộ lên Google Sheets...");
     try {
-      await syncDataToGoogleSheets(gAccessToken, sheetId, updatedMembers, updatedExpenses);
+      await syncDataToGoogleSheets(gAppsScriptUrl, updatedMembers, updatedExpenses);
       setSheetsSyncStatus("success");
       setSheetsSyncMessage("Tự động lưu dữ liệu lên Google Sheets thành công!");
       setTimeout(() => setSheetsSyncStatus("idle"), 3000);
@@ -156,6 +189,13 @@ export default function App() {
     setExpenses(importedExpenses);
   };
 
+  if (!isLoggedIn) {
+    return <LoginScreen onLoginSuccess={() => {
+      setIsLoggedIn(true);
+      localStorage.setItem("family_auth_login", "true");
+    }} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-gray-300 font-sans flex flex-col justify-between selection:bg-emerald-500/20 selection:text-emerald-300">
       
@@ -179,7 +219,7 @@ export default function App() {
 
           <div className="flex items-center gap-3">
             {/* Google Sheets Active Database sync status */}
-            {sheetId && gAccessToken ? (
+            {gAppsScriptUrl ? (
               <div id="sheets-sync-header-badge" className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/20 border border-emerald-900/30 text-emerald-400 text-xs font-semibold">
                 {sheetsSyncStatus === "loading" ? (
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -209,6 +249,16 @@ export default function App() {
               </span>
               <span>Hệ thống trực tuyến</span>
             </div>
+
+            {/* Logout button */}
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/20 border border-rose-900/35 hover:bg-rose-950/40 text-rose-450 text-xs font-bold transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              title="Đăng xuất khỏi phiên làm việc"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Đăng xuất</span>
+            </button>
           </div>
         </div>
       </header>
@@ -217,7 +267,7 @@ export default function App() {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
         {/* Google Sheets Always Connect banner */}
-        {(!sheetId || !gAccessToken) && (
+        {!gAppsScriptUrl && (
           <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -392,10 +442,8 @@ export default function App() {
                   pageId={pageId}
                   onSaveFbConfig={handleSaveFbConfig}
                   onImportData={handleImportData}
-                  sheetId={sheetId}
-                  setSheetId={setSheetId}
-                  gAccessToken={gAccessToken}
-                  setGAccessToken={setGAccessToken}
+                  gAppsScriptUrl={gAppsScriptUrl}
+                  setGAppsScriptUrl={setGAppsScriptUrl}
                   sheetsSyncStatus={sheetsSyncStatus}
                   setSheetsSyncStatus={setSheetsSyncStatus}
                   sheetsSyncMessage={sheetsSyncMessage}
