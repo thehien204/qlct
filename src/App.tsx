@@ -61,10 +61,13 @@ export default function App() {
       try {
         const response = await fetch("/api/family-config");
         if (response.ok) {
-          const data = await response.json();
-          if (data.gAppsScriptUrl) {
-            setGAppsScriptUrl(data.gAppsScriptUrl);
-            localStorage.setItem("gg_apps_script_url", data.gAppsScriptUrl);
+          const contentType = response.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const data = await response.json();
+            if (data.gAppsScriptUrl) {
+              setGAppsScriptUrl(data.gAppsScriptUrl);
+              localStorage.setItem("gg_apps_script_url", data.gAppsScriptUrl);
+            }
           }
         }
       } catch (err) {

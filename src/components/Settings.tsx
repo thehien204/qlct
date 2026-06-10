@@ -102,6 +102,12 @@ export const Settings: React.FC<SettingsProps> = ({
           gAppsScriptUrl: gAppsScriptUrl.trim(),
         }),
       });
+      
+      if (response.status === 405 || response.status === 404) {
+        setServerSaveError("Bạn đang deploy trên hosting tĩnh (GitHub Pages) nên không thể lưu cấu hình lên máy chủ backend. Tuy nhiên, URL đã được tự động lưu cục bộ trên thiết bị của bạn!");
+        return;
+      }
+      
       const data = await response.json();
       if (response.ok && data.success) {
         setServerSaveSuccess("Đã lưu cấu hình Google Apps Script Web App URL cố định lên máy chủ cho cả gia đình thành công!");
