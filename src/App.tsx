@@ -13,7 +13,7 @@ import { Dashboard } from "./components/Dashboard";
 import { Settings } from "./components/Settings";
 import { 
   PiggyBank, LayoutDashboard, Receipt, RefreshCw, UserCheck, Sliders, Sparkles,
-  Database, CloudLightning, CloudOff, Check, AlertCircle, LogOut
+  Database, CloudLightning, CloudOff, Check, AlertCircle, LogOut, Info
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
@@ -57,6 +57,17 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem("family_auth_login") === "true";
   });
+
+  // Toast Notification state & trigger
+  const [toast, setToast] = useState<{ id: number; message: string; type: "success" | "error" | "info" } | null>(null);
+
+  const showToast = (message: string, type: "success" | "error" | "info" = "success") => {
+    const id = Date.now();
+    setToast({ id, message, type });
+    setTimeout(() => {
+      setToast((prev) => (prev && prev.id === id ? null : prev));
+    }, 4000);
+  };
 
   // Fetch shared family configuration on mount or login
   useEffect(() => {
@@ -153,18 +164,22 @@ export default function App() {
     const updated = members.map((m) => (m.id === updatedMember.id ? updatedMember : m));
     setMembers(updated);
     syncWithSheetsInBg(updated, expenses);
+    showToast(`Đã cập nhật thông tin "${updatedMember.name}" thành công!`, "success");
   };
 
   const handleAddMember = (newMember: Member) => {
     const updated = [...members, newMember];
     setMembers(updated);
     syncWithSheetsInBg(updated, expenses);
+    showToast(`Đã thêm thành viên "${newMember.name}" thành công!`, "success");
   };
 
   const handleDeleteMember = (id: string) => {
+    const memberName = members.find((m) => m.id === id)?.name || "thành viên";
     const updated = members.filter((m) => m.id !== id);
     setMembers(updated);
     syncWithSheetsInBg(updated, expenses);
+    showToast(`Đã xoá ${memberName} khỏi danh sách gia đình.`, "info");
   };
 
   const handleAddExpense = (newExp: Omit<Expense, "id" | "createdAt">) => {
@@ -176,12 +191,15 @@ export default function App() {
     const updated = [fresh, ...expenses];
     setExpenses(updated);
     syncWithSheetsInBg(members, updated);
+    showToast(`Ghi nhận khoản chi "${newExp.title}" thành công!`, "success");
   };
 
   const handleDeleteExpense = (id: string) => {
+    const expenseTitle = expenses.find((e) => e.id === id)?.title || "khoản chi";
     const updated = expenses.filter((exp) => exp.id !== id);
     setExpenses(updated);
     syncWithSheetsInBg(members, updated);
+    showToast(`Đã xoá khoản chi "${expenseTitle}".`, "info");
   };
 
   const handleSaveFbConfig = (token: string, id: string) => {
@@ -189,6 +207,7 @@ export default function App() {
     setPageId(id);
     localStorage.setItem("fb_page_access_token", token);
     localStorage.setItem("fb_page_id", id);
+    showToast("Đã lưu cấu hình API Messenger thành công!", "success");
   };
 
   const handleImportData = (importedMembers: Member[], importedExpenses: Expense[]) => {
@@ -473,6 +492,48 @@ export default function App() {
           </p>
         </div>
       </footer>
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9, transition: { duration: 0.2 } }}
+            className="fixed bottom-6 right-6 z-50 max-w-sm w-full bg-[#121212]/95 border border-[#222] backdrop-blur-md px-4 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3"
+          >
+            <div className={`p-2 rounded-xl shrink-0 ${
+              toast.type === "success" 
+                ? "bg-emerald-500/10 text-emerald-450 border border-emerald-500/20" 
+                : toast.type === "error" 
+                ? "bg-rose-500/10 text-rose-450 border border-rose-500/20" 
+                : "bg-blue-500/10 text-blue-450 border border-blue-500/20"
+            }`}>
+              {toast.type === "success" ? (
+                <Check className="w-4.5 h-4.5" />
+              ) : toast.type === "error" ? (
+                <AlertCircle className="w-4.5 h-4.5" />
+              ) : (
+                <Info className="w-4.5 h-4.5" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-white leading-tight">
+                {toast.type === "success" ? "Thành công" : toast.type === "error" ? "Lỗi" : "Thông báo"}
+              </p>
+              <p className="text-[11px] text-gray-400 mt-0.5 leading-normal truncate">
+                {toast.message}
+              </p>
+            </div>
+            <button 
+              onClick={() => setToast(null)} 
+              className="text-gray-500 hover:text-white p-1 cursor-pointer transition-colors text-xs font-bold"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
