@@ -18,31 +18,70 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { 
   loadDataFromGoogleSheets, 
-  syncDataToGoogleSheets 
+  syncDataToGoogleSheets,
+  PaymentStatus
 } from "./utils/googleSheets";
 import { LoginScreen } from "./components/LoginScreen";
 
 // CẤU HÌNH ĐƯỜNG DẪN GOOGLE APPS SCRIPT MẶC ĐỊNH CHO CẢ GIA ĐÌNH TẠI ĐÂY (NẾU DÙNG GITHUB PAGES)
 // Bạn dán đường dẫn Web App của bạn vào giữa hai dấu nháy kép, ví dụ: "https://script.google.com/macros/s/xxxx/exec"
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxXbq6Z1KDkpLUHy7JlbqfvS16gEbrueyT9-dTR_57jzuHHd3ccACtn8Bqdn4W_edSXJQ/exec";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbRieGY4wugJ7BVy7IiYtIMiLZ0HRaAVMA5AXZtIs6hkNPIwpj2nCxK1duUpUmBlydJ6A/exec";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "expenses" | "settlement" | "members" | "settings">("dashboard");
 
-  // Load database from LocalStorage or start clean and empty
+  // Load database from LocalStorage or start clean and empty, ensuring no duplicate entries
   const [members, setMembers] = useState<Member[]>(() => {
     const saved = localStorage.getItem("family_members");
-    return saved ? JSON.parse(saved) : [];
+    const parsed = saved ? JSON.parse(saved) : [];
+    if (Array.isArray(parsed)) {
+      const map = new Map<string, Member>();
+      parsed.forEach((m) => {
+        if (m.id) map.set(m.id, m);
+      });
+      return Array.from(map.values());
+    }
+    return [];
   });
 
   const [expenses, setExpenses] = useState<Expense[]>(() => {
     const saved = localStorage.getItem("family_expenses");
-    return saved ? JSON.parse(saved) : [];
+    const parsed = saved ? JSON.parse(saved) : [];
+    if (Array.isArray(parsed)) {
+      const map = new Map<string, Expense>();
+      parsed.forEach((e) => {
+        if (e.id) map.set(e.id, e);
+      });
+      return Array.from(map.values());
+    }
+    return [];
   });
 
-  const [payments, setPayments] = useState<{ month: string; fromId: string; toId: string; isSettled: boolean }[]>(() => {
+  const [payments, setPayments] = useState<PaymentStatus[]>(() => {
     const saved = localStorage.getItem("family_payments");
-    return saved ? JSON.parse(saved) : [];
+    const parsed = saved ? JSON.parse(saved) : [];
+    if (Array.isArray(parsed)) {
+      const map = new Map<string, PaymentStatus>();
+      parsed.forEach((p) => {
+        if (p.id) {
+          map.set(p.id, p);
+        } else if (p.month && p.fromId && p.toId) {
+          const amountVal = Number(p.amount) || 0;
+          const key = `${p.month}:${p.fromId}:${p.toId}:${amountVal}`;
+          map.set(key, {
+            id: key,
+            month: p.month,
+            fromId: p.fromId,
+            toId: p.toId,
+            isSettled: p.isSettled !== false,
+            amount: amountVal,
+            createdAt: p.createdAt || Date.now(),
+          });
+        }
+      });
+      return Array.from(map.values());
+    }
+    return [];
   });
 
   const [pageAccessToken, setPageAccessToken] = useState(() => {
@@ -118,45 +157,65 @@ export default function App() {
     localStorage.setItem("family_payments", JSON.stringify(payments));
   }, [payments]);
 
-  // Google Sheets Auto-Pull on initial load or credentials change
-  useEffect(() => {
-    const autoFetchFromSheets = async () => {
-      if (!gAppsScriptUrl) return;
+  const lastFetchTimeRef = React.useRef<number>(0);
+
+  // Reusable Google Sheets Pull function
+  const pullFromSheets = async () => {
+    if (!gAppsScriptUrl || !isLoggedIn) return;
+    
+    // Throttle fetches within 2 seconds to avoid duplicate fetches on mount/double-clicks
+    const now = Date.now();
+    if (now - lastFetchTimeRef.current < 2000) return;
+    lastFetchTimeRef.current = now;
+    
+    setSheetsSyncStatus("loading");
+    setSheetsSyncMessage("Đang tự động nạp dữ liệu từ Google Sheets...");
+    try {
+      const data = await loadDataFromGoogleSheets(gAppsScriptUrl);
       
-      setSheetsSyncStatus("loading");
-      setSheetsSyncMessage("Đang tự động nạp dữ liệu từ Google Sheets...");
-      try {
-        const data = await loadDataFromGoogleSheets(gAppsScriptUrl);
-        
-        // If sheet is completely empty, keep things empty to match sheets perfectly
-        if (data.members.length === 0) {
-          setMembers([]);
-          setExpenses([]);
-          setPayments([]);
-          setSheetsSyncStatus("success");
-          setSheetsSyncMessage("Đồng bộ thành công! Bảng tính Google Sheets đang trống.");
-        } else {
-          setMembers(data.members);
-          setExpenses(data.expenses);
-          setPayments(data.payments || []);
-          setSheetsSyncStatus("success");
-          setSheetsSyncMessage(`Đồng bộ Google Sheets thành công! Nạp ${data.members.length} thành viên & ${data.expenses.length} giao dịch.`);
+      // If sheet is completely empty, keep things empty to match sheets perfectly
+      if (data.members.length === 0) {
+        setMembers([]);
+        setExpenses([]);
+        setPayments([]);
+        setSheetsSyncStatus("success");
+        setSheetsSyncMessage("Đồng bộ thành công! Bảng tính Google Sheets đang trống.");
+      } else {
+        setMembers(data.members);
+        setExpenses(data.expenses);
+        if (data.payments !== undefined) {
+          setPayments(data.payments);
         }
-        setTimeout(() => setSheetsSyncStatus("idle"), 4000);
-      } catch (err: any) {
-        console.warn("Initial sheets pull error:", err);
-        setSheetsSyncStatus("error");
-        setSheetsSyncMessage(`Tải tự động thất bại: ${err.message || "Kiểm tra URL Apps Script"}. Hệ thống đang chạy Ngoại tuyến.`);
+        setSheetsSyncStatus("success");
+        setSheetsSyncMessage(`Đồng bộ Google Sheets thành công! Nạp ${data.members.length} thành viên & ${data.expenses.length} giao dịch.`);
       }
-    };
-    autoFetchFromSheets();
-  }, [gAppsScriptUrl]);
+      setTimeout(() => setSheetsSyncStatus("idle"), 4000);
+    } catch (err: any) {
+      console.warn("Sheets pull error:", err);
+      setSheetsSyncStatus("error");
+      setSheetsSyncMessage(`Tải tự động thất bại: ${err.message || "Kiểm tra URL Apps Script"}. Hệ thống đang chạy Ngoại tuyến.`);
+    }
+  };
+
+  // Google Sheets Auto-Pull on initial load, login, or credentials change
+  useEffect(() => {
+    if (isLoggedIn) {
+      pullFromSheets();
+    }
+  }, [gAppsScriptUrl, isLoggedIn]);
+
+  // Pull from sheets when switching tabs to ensure fresh data (except settings tab to avoid interrupting inputs)
+  useEffect(() => {
+    if (isLoggedIn && activeTab !== "settings") {
+      pullFromSheets();
+    }
+  }, [activeTab, isLoggedIn]);
 
   // Write-through helper function to sync to Sheets in background
   const syncWithSheetsInBg = async (
     updatedMembers: Member[], 
     updatedExpenses: Expense[], 
-    updatedPayments: { month: string; fromId: string; toId: string; isSettled: boolean }[] = payments
+    updatedPayments: PaymentStatus[] = payments
   ) => {
     if (!gAppsScriptUrl) return;
     
@@ -225,28 +284,59 @@ export default function App() {
     showToast("Đã lưu cấu hình API Messenger thành công!", "success");
   };
 
-  const handleTogglePayment = (month: string, fromId: string, toId: string) => {
-    setPayments((prev) => {
-      const exists = prev.some((p) => p.month === month && p.fromId === fromId && p.toId === toId);
-      let updated;
-      if (exists) {
-        updated = prev.filter((p) => !(p.month === month && p.fromId === fromId && p.toId === toId));
-      } else {
-        updated = [...prev, { month, fromId, toId, isSettled: true }];
-      }
-      syncWithSheetsInBg(members, expenses, updated);
-      return updated;
-    });
+  const handleAddPayment = (month: string, fromId: string, toId: string, amount: number) => {
+    const newPayment: PaymentStatus = {
+      id: `p-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      month,
+      fromId,
+      toId,
+      amount,
+      isSettled: true,
+      createdAt: Date.now()
+    };
+    const updated = [...payments, newPayment];
+    setPayments(updated);
+    syncWithSheetsInBg(members, expenses, updated);
+  };
+
+  const handleDeletePayment = (paymentId: string) => {
+    const updated = payments.filter((p) => p.id !== paymentId);
+    setPayments(updated);
+    syncWithSheetsInBg(members, expenses, updated);
   };
 
   const handleImportData = (
     importedMembers: Member[], 
     importedExpenses: Expense[],
-    importedPayments: { month: string; fromId: string; toId: string; isSettled: boolean }[] = []
+    importedPayments: PaymentStatus[] = []
   ) => {
-    setMembers(importedMembers);
-    setExpenses(importedExpenses);
-    setPayments(importedPayments);
+    // Deduplicate imported members
+    const membersMap = new Map<string, Member>();
+    importedMembers.forEach((m) => {
+      if (m.id) membersMap.set(m.id, m);
+    });
+    
+    // Deduplicate imported expenses
+    const expensesMap = new Map<string, Expense>();
+    importedExpenses.forEach((e) => {
+      if (e.id) expensesMap.set(e.id, e);
+    });
+    
+    // Deduplicate imported payments
+    const paymentsMap = new Map<string, PaymentStatus>();
+    importedPayments.forEach((p) => {
+      const amountVal = Number(p.amount) || 0;
+      const key = p.id || `${p.month}:${p.fromId}:${p.toId}:${amountVal}`;
+      paymentsMap.set(key, {
+        ...p,
+        id: key,
+        amount: amountVal
+      });
+    });
+
+    setMembers(Array.from(membersMap.values()));
+    setExpenses(Array.from(expensesMap.values()));
+    setPayments(Array.from(paymentsMap.values()));
   };
 
   if (!isLoggedIn) {
@@ -465,7 +555,8 @@ export default function App() {
                   members={members} 
                   expenses={expenses} 
                   payments={payments}
-                  onTogglePayment={handleTogglePayment}
+                  onAddPayment={handleAddPayment}
+                  onDeletePayment={handleDeletePayment}
                   pageAccessToken={pageAccessToken}
                   pageId={pageId}
                   showToast={showToast}

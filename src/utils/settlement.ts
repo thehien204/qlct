@@ -19,7 +19,8 @@ export interface MemberBalance {
 export function calculateBalances(
   members: Member[],
   expenses: Expense[],
-  selectedMonth?: string // YYYY-MM
+  selectedMonth?: string, // YYYY-MM
+  payments?: { month: string; fromId: string; toId: string; isSettled: boolean; amount: number }[]
 ): MemberBalance[] {
   // Initialize balances map
   const balancesMap: Record<string, { totalPaid: number; totalBenefit: number }> = {};
@@ -49,6 +50,21 @@ export function calculateBalances(
       for (const bId of beneficiaries) {
         if (balancesMap[bId]) {
           balancesMap[bId].totalBenefit += share;
+        }
+      }
+    }
+  }
+
+  // Offset balances with settled payments for the selected month
+  if (payments && selectedMonth) {
+    for (const p of payments) {
+      if (p.month === selectedMonth && p.isSettled) {
+        const amt = Number(p.amount) || 0;
+        if (balancesMap[p.fromId]) {
+          balancesMap[p.fromId].totalPaid += amt; // debtor paid this amount
+        }
+        if (balancesMap[p.toId]) {
+          balancesMap[p.toId].totalBenefit += amt; // creditor received this amount
         }
       }
     }

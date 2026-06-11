@@ -609,15 +609,37 @@ export const Settings: React.FC<SettingsProps> = ({
   var payments = [];
   if (paymentSheet) {
     var paymentData = paymentSheet.getDataRange().getValues();
-    for (var i = 1; i < paymentData.length; i++) {
-      var row = paymentData[i];
-      if (row[0] && row[1] && row[2]) {
-        payments.push({
-          month: String(row[0]),
-          fromId: String(row[1]),
-          toId: String(row[2]),
-          isSettled: String(row[3]) === "true" || row[3] === true
-        });
+    if (paymentData.length > 1) {
+      var headers = paymentData[0] || [];
+      var idIdx = headers.indexOf("ID");
+      var monthIdx = headers.indexOf("Month");
+      var fromIdIdx = headers.indexOf("FromId");
+      var toIdIdx = headers.indexOf("ToId");
+      var amountIdx = headers.indexOf("Amount");
+      var isSettledIdx = headers.indexOf("IsSettled");
+      var createdAtIdx = headers.indexOf("CreatedAt");
+
+      for (var i = 1; i < paymentData.length; i++) {
+        var row = paymentData[i];
+        var pId = idIdx !== -1 ? String(row[idIdx]) : "p-" + i;
+        var pMonth = monthIdx !== -1 ? String(row[monthIdx]) : String(row[0] || "");
+        var pFromId = fromIdIdx !== -1 ? String(row[fromIdIdx]) : String(row[1] || "");
+        var pToId = toIdIdx !== -1 ? String(row[toIdIdx]) : String(row[2] || "");
+        var pIsSettled = isSettledIdx !== -1 ? (String(row[isSettledIdx]) === "true" || row[isSettledIdx] === true) : (String(row[3]) === "true" || row[3] === true);
+        var pAmount = amountIdx !== -1 ? Number(row[amountIdx]) || 0 : 0;
+        var pCreatedAt = createdAtIdx !== -1 ? Number(row[createdAtIdx]) || Date.now() : Date.now();
+
+        if (pMonth && pFromId && pToId) {
+          payments.push({
+            id: pId,
+            month: pMonth,
+            fromId: pFromId,
+            toId: pToId,
+            isSettled: pIsSettled,
+            amount: pAmount,
+            createdAt: pCreatedAt
+          });
+        }
       }
     }
   }
@@ -664,10 +686,18 @@ function doPost(e) {
     var paymentSheet = ss.getSheetByName("ThanhToan");
     if (!paymentSheet) paymentSheet = ss.insertSheet("ThanhToan");
     paymentSheet.clear();
-    paymentSheet.appendRow(["Month", "FromId", "ToId", "IsSettled"]);
+    paymentSheet.appendRow(["ID", "Month", "FromId", "ToId", "Amount", "IsSettled", "CreatedAt"]);
     for (var i = 0; i < payments.length; i++) {
       var p = payments[i];
-      paymentSheet.appendRow([p.month, p.fromId, p.toId, p.isSettled]);
+      paymentSheet.appendRow([
+        p.id || ("p-" + i + "-" + Date.now()),
+        p.month,
+        p.fromId,
+        p.toId,
+        p.amount || 0,
+        p.isSettled,
+        p.createdAt || Date.now()
+      ]);
     }
     return ContentService.createTextOutput(JSON.stringify({ success: true }))
       .setMimeType(ContentService.MimeType.JSON);

@@ -6,10 +6,80 @@
 import { Member, Expense } from "../types";
 
 export interface PaymentStatus {
+  id: string;
   month: string;
   fromId: string;
   toId: string;
   isSettled: boolean;
+  amount: number;
+  createdAt?: number;
+}
+
+/**
+ * Helper to parse various date strings into standard YYYY-MM-DD format
+ */
+export function parseDateToYYYYMMDD(dateStr: string): string {
+  if (!dateStr) return "";
+  
+  // Clean any trailing timezone parentheses like " (Giờ Đông Dương)" or " (Indochina Time)"
+  const cleaned = dateStr.replace(/\s*\(.*\)$/, "").trim();
+  
+  // Check if it's already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) {
+    return cleaned;
+  }
+  
+  // Try to parse using Date.parse
+  const timestamp = Date.parse(cleaned);
+  if (!isNaN(timestamp)) {
+    const d = new Date(timestamp);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  
+  // Fallback for dd/mm/yyyy format
+  const dmyMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, "0");
+    const month = dmyMatch[2].padStart(2, "0");
+    const year = dmyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+  
+  return dateStr;
+}
+
+/**
+ * Helper to parse various month strings into standard YYYY-MM format
+ */
+export function parseMonthToYYYYMM(monthStr: string): string {
+  if (!monthStr) return "";
+  
+  // Clean any trailing timezone parentheses like " (Giờ Đông Dương)" or " (Indochina Time)"
+  const cleaned = monthStr.replace(/\s*\(.*\)$/, "").trim();
+  
+  // Check if it's already YYYY-MM
+  if (/^\d{4}-\d{2}$/.test(cleaned)) {
+    return cleaned;
+  }
+  
+  // If it is YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) {
+    return cleaned.substring(0, 7);
+  }
+  
+  // Try to parse using Date.parse
+  const timestamp = Date.parse(cleaned);
+  if (!isNaN(timestamp)) {
+    const d = new Date(timestamp);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  }
+  
+  return monthStr;
 }
 
 /**
@@ -17,7 +87,7 @@ export interface PaymentStatus {
  */
 export async function loadDataFromGoogleSheets(
   webAppUrl: string
-): Promise<{ members: Member[]; expenses: Expense[]; payments: PaymentStatus[] }> {
+): Promise<{ members: Member[]; expenses: Expense[]; payments?: PaymentStatus[] }> {
   if (!webAppUrl) {
     throw new Error("Đường dẫn Google Apps Script Web App chưa được cấu hình.");
   }
@@ -34,8 +104,8 @@ export async function loadDataFromGoogleSheets(
 
   const data = await response.json();
   
-  // Parse members and expenses safely
-  const members: Member[] = (data.members || []).map((m: any) => ({
+  // Parse members safely and deduplicate by id
+  const rawMembers: Member[] = (data.members || []).map((m: any) => ({
     id: String(m.id || ""),
     name: String(m.name || ""),
     role: String(m.role || ""),
@@ -44,24 +114,52 @@ export async function loadDataFromGoogleSheets(
     messengerId: String(m.messengerId || ""),
   })).filter((m: Member) => m.id && m.name);
 
-  const expenses: Expense[] = (data.expenses || []).map((e: any) => ({
+  const membersMap = new Map<string, Member>();
+  rawMembers.forEach(m => membersMap.set(m.id, m));
+  const members = Array.from(membersMap.values());
+
+  // Parse expenses safely and deduplicate by id
+  const rawExpenses: Expense[] = (data.expenses || []).map((e: any) => ({
     id: String(e.id || ""),
     title: String(e.title || ""),
     amount: Number(e.amount) || 0,
     categoryId: String(e.categoryId || "others"),
-    date: String(e.date || ""),
+    date: parseDateToYYYYMMDD(String(e.date || "")),
     paidById: String(e.paidById || ""),
     beneficiaryIds: e.beneficiaryIds ? (Array.isArray(e.beneficiaryIds) ? e.beneficiaryIds.map(String) : String(e.beneficiaryIds).split(",").map(id => id.trim()).filter(Boolean)) : [],
     notes: String(e.notes || ""),
     createdAt: Number(e.createdAt) || Date.now(),
   })).filter((e: Expense) => e.id && e.title && e.amount > 0);
 
-  const payments: PaymentStatus[] = (data.payments || []).map((p: any) => ({
-    month: String(p.month || ""),
-    fromId: String(p.fromId || ""),
-    toId: String(p.toId || ""),
-    isSettled: String(p.isSettled) === "true" || p.isSettled === true,
-  })).filter((p: PaymentStatus) => p.month && p.fromId && p.toId);
+  const expensesMap = new Map<string, Expense>();
+  rawExpenses.forEach(e => expensesMap.set(e.id, e));
+  const expenses = Array.from(expensesMap.values());
+
+  // Parse payments safely and deduplicate by id, only if present in response
+  let payments: PaymentStatus[] | undefined = undefined;
+  if (data.payments) {
+    const rawPayments: PaymentStatus[] = data.payments.map((p: any) => {
+      const monthVal = parseMonthToYYYYMM(String(p.month || ""));
+      const fromIdVal = String(p.fromId || "");
+      const toIdVal = String(p.toId || "");
+      const amountVal = Number(p.amount) || 0;
+      return {
+        id: String(p.id || `p-${monthVal}-${fromIdVal}-${toIdVal}-${amountVal}`),
+        month: monthVal,
+        fromId: fromIdVal,
+        toId: toIdVal,
+        isSettled: String(p.isSettled) === "true" || p.isSettled === true,
+        amount: amountVal,
+        createdAt: Number(p.createdAt) || Date.now(),
+      };
+    }).filter((p: PaymentStatus) => p.month && p.fromId && p.toId);
+
+    const paymentsMap = new Map<string, PaymentStatus>();
+    rawPayments.forEach(p => {
+      paymentsMap.set(p.id, p);
+    });
+    payments = Array.from(paymentsMap.values());
+  }
 
   return { members, expenses, payments };
 }
@@ -100,10 +198,13 @@ export async function syncDataToGoogleSheets(
       createdAt: e.createdAt || Date.now()
     })),
     payments: payments.map(p => ({
+      id: p.id,
       month: p.month,
       fromId: p.fromId,
       toId: p.toId,
-      isSettled: p.isSettled
+      isSettled: p.isSettled,
+      amount: p.amount || 0,
+      createdAt: p.createdAt || Date.now()
     }))
   };
 
