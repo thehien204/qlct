@@ -16,6 +16,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 import { PaymentStatus } from "../utils/googleSheets";
+import { API_BASE } from "../utils/api";
 
 interface SettlementViewProps {
   members: Member[];
@@ -78,7 +79,7 @@ export const SettlementView: React.FC<SettlementViewProps> = ({
     setAiLoading(true);
     setAiError("");
     try {
-      const response = await fetch("/api/gemini/advice", {
+      const response = await fetch(`${API_BASE}/api/gemini/advice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -131,7 +132,7 @@ export const SettlementView: React.FC<SettlementViewProps> = ({
     const isTest = !pageAccessToken; // Test simulator if PageAccessToken is empty in settings
 
     try {
-      const res = await fetch("/api/send-messenger", {
+      const res = await fetch(`${API_BASE}/api/send-messenger`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

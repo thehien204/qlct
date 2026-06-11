@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Lock, PiggyBank, ArrowRight, ShieldAlert, Sparkles, Users } from "lucide-react";
 import { motion } from "motion/react";
 import { Member } from "../types";
+import { API_BASE } from "../utils/api";
 
 interface LoginScreenProps {
   onLoginSuccess: (member: Member) => void;
@@ -15,7 +16,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/auth/members")
+    fetch(`${API_BASE}/api/auth/members`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
@@ -41,7 +42,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setError("");
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

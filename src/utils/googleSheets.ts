@@ -4,6 +4,7 @@
  */
 
 import { Member, Expense } from "../types";
+import { API_BASE } from "./api";
 
 export interface PaymentStatus {
   id: string;
@@ -86,7 +87,7 @@ export function parseMonthToYYYYMM(monthStr: string): string {
  * Reads members, expenses, and payments from Google Sheet database via Apps Script Web App.
  */
 export async function loadDataFromDb(): Promise<{ members: Member[]; expenses: Expense[]; payments?: PaymentStatus[] }> {
-  const response = await fetch("/api/db", {
+  const response = await fetch(`${API_BASE}/api/db`, {
     method: "GET"
   });
 
@@ -196,7 +197,7 @@ export async function syncDataToDb(
     }))
   };
 
-  const response = await fetch("/api/db", {
+  const response = await fetch(`${API_BASE}/api/db`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

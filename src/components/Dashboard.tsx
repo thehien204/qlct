@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Member, Expense, AIInsight } from "../types";
+import { API_BASE } from "../utils/api";
 import { getCategoryById, DEFAULT_CATEGORIES } from "../utils/categories";
 import { formatVND, getCurrentMonthStr } from "../utils/settlement";
 import { 
@@ -146,7 +147,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ members, expenses }) => {
     setLoadingAi(true);
     setAiError("");
     try {
-      const response = await fetch("/api/gemini/advice", {
+      const response = await fetch(`${API_BASE}/api/gemini/advice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
