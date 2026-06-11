@@ -85,21 +85,14 @@ export function parseMonthToYYYYMM(monthStr: string): string {
 /**
  * Reads members, expenses, and payments from Google Sheet database via Apps Script Web App.
  */
-export async function loadDataFromGoogleSheets(
-  webAppUrl: string
-): Promise<{ members: Member[]; expenses: Expense[]; payments?: PaymentStatus[] }> {
-  if (!webAppUrl) {
-    throw new Error("Đường dẫn Google Apps Script Web App chưa được cấu hình.");
-  }
-
-  const response = await fetch(webAppUrl, {
-    method: "GET",
-    redirect: "follow",
+export async function loadDataFromDb(): Promise<{ members: Member[]; expenses: Expense[]; payments?: PaymentStatus[] }> {
+  const response = await fetch("/api/db", {
+    method: "GET"
   });
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Không thể nạp dữ liệu từ Google Sheets: ${errText}`);
+    throw new Error(`Không thể nạp dữ liệu từ máy chủ cục bộ: ${errText}`);
   }
 
   const data = await response.json();
@@ -165,18 +158,13 @@ export async function loadDataFromGoogleSheets(
 }
 
 /**
- * Saves current members, expenses, and payments to Google Sheet via Apps Script Web App.
+ * Saves current members, expenses, and payments to the local database.
  */
-export async function syncDataToGoogleSheets(
-  webAppUrl: string,
+export async function syncDataToDb(
   members: Member[],
   expenses: Expense[],
   payments: PaymentStatus[]
 ): Promise<boolean> {
-  if (!webAppUrl) {
-    throw new Error("Đường dẫn Google Apps Script Web App chưa được cấu hình.");
-  }
-
   const payload = {
     members: members.map(m => ({
       id: m.id,
@@ -208,12 +196,10 @@ export async function syncDataToGoogleSheets(
     }))
   };
 
-  // We use Content-Type: text/plain to avoid CORS preflight OPTIONS request
-  const response = await fetch(webAppUrl, {
+  const response = await fetch("/api/db", {
     method: "POST",
-    redirect: "follow",
     headers: {
-      "Content-Type": "text/plain",
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
   });
@@ -225,7 +211,7 @@ export async function syncDataToGoogleSheets(
 
   const result = await response.json();
   if (!result.success) {
-    throw new Error(result.error || "Lỗi đồng bộ từ phía Google Apps Script.");
+    throw new Error(result.error || "Lỗi đồng bộ từ phía máy chủ cục bộ.");
   }
 
   return true;

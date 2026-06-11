@@ -38,6 +38,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
   const [editColor, setEditColor] = useState("");
   const [editLink, setEditLink] = useState("");
   const [editFbId, setEditFbId] = useState("");
+  const [editPasscode, setEditPasscode] = useState("");
 
   // Add Member State
   const [isAdding, setIsAdding] = useState(false);
@@ -46,6 +47,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
   const [newColor, setNewColor] = useState("bg-blue-500");
   const [newLink, setNewLink] = useState("");
   const [newFbId, setNewFbId] = useState("");
+  const [newPasscode, setNewPasscode] = useState("123456");
 
   const startEdit = (m: Member) => {
     setEditingId(m.id);
@@ -54,6 +56,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
     setEditColor(m.avatarColor);
     setEditLink(m.messengerLink || "");
     setEditFbId(m.messengerId || "");
+    setEditPasscode(m.passcode || "");
   };
 
   const saveEdit = (id: string) => {
@@ -65,6 +68,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
       avatarColor: editColor,
       messengerLink: editLink.trim() || undefined,
       messengerId: editFbId.trim() || undefined,
+      passcode: editPasscode.trim() || undefined,
     });
     setEditingId(null);
   };
@@ -78,6 +82,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
       avatarColor: newColor,
       messengerLink: newLink.trim() || undefined,
       messengerId: newFbId.trim() || undefined,
+      passcode: newPasscode.trim() || "123456",
     });
     // Reset fields
     setNewName("");
@@ -85,6 +90,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
     setNewColor("bg-blue-500");
     setNewLink("");
     setNewFbId("");
+    setNewPasscode("123456");
     setIsAdding(false);
   };
 
@@ -112,7 +118,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
-                  className={`relative p-5 rounded-xl border transition-all duration-200 flex flex-col justify-between min-h-[18rem] md:h-72 ${
+                  className={`relative p-5 rounded-xl border transition-all duration-200 flex flex-col justify-between min-h-[22rem] md:h-80 ${
                     isEditing
                       ? "border-blue-500 bg-[#1e1e1e] shadow-md ring-1 ring-blue-900/30"
                       : "border-[#222] bg-[#0F0F0F] hover:bg-[#141414] hover:shadow-md hover:border-[#333]"
@@ -165,6 +171,18 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
                             className="w-1/2 text-[10px] px-2 py-1 bg-[#0a0a0a] border border-[#222] rounded focus:outline-none text-white font-mono"
                           />
                         </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Mật khẩu PIN</label>
+                        <input
+                          id={`edit-passcode-${member.id}`}
+                          type="password"
+                          value={editPasscode}
+                          onChange={(e) => setEditPasscode(e.target.value)}
+                          className="w-full text-xs px-2.5 py-1 bg-[#0a0a0a] border border-[#222] rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-white font-mono"
+                          placeholder="Mặc định: 123456"
+                        />
                       </div>
 
                       <div className="space-y-1">
@@ -263,7 +281,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="relative p-5 rounded-xl border border-emerald-500 bg-[#1e1e1e] shadow-md ring-1 ring-emerald-950/30 flex flex-col justify-between min-h-[18rem] md:h-72"
+                className="relative p-5 rounded-xl border border-emerald-500 bg-[#1e1e1e] shadow-md ring-1 ring-emerald-950/30 flex flex-col justify-between min-h-[22rem] md:h-80"
               >
                 <div className="space-y-2 flex-1 flex flex-col justify-between">
                   <div className="space-y-1">
@@ -288,6 +306,18 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
                       onChange={(e) => setNewRole(e.target.value)}
                       className="w-full text-xs px-2.5 py-1 bg-[#0a0a0a] border border-[#222] rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 text-white"
                       placeholder="Ví dụ: Em họ, Khách..."
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Mật khẩu PIN</label>
+                    <input
+                      id="add-member-passcode"
+                      type="password"
+                      value={newPasscode}
+                      onChange={(e) => setNewPasscode(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1 bg-[#0a0a0a] border border-[#222] rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 text-white font-mono"
+                      placeholder="Mặc định: 123456"
                     />
                   </div>
 
@@ -335,7 +365,7 @@ export const MemberManager: React.FC<MemberManagerProps> = ({
                 onClick={() => setIsAdding(true)}
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
-                className="p-5 rounded-xl border border-dashed border-[#333] hover:border-emerald-500/50 hover:bg-emerald-950/5 text-gray-500 hover:text-emerald-400 cursor-pointer flex flex-col items-center justify-center gap-3 transition-all duration-200 min-h-[18rem] md:h-72 group"
+                className="p-5 rounded-xl border border-dashed border-[#333] hover:border-emerald-500/50 hover:bg-emerald-950/5 text-gray-500 hover:text-emerald-400 cursor-pointer flex flex-col items-center justify-center gap-3 transition-all duration-200 min-h-[22rem] md:h-80 group"
               >
                 <div className="w-12 h-12 rounded-full border border-dashed border-[#444] group-hover:border-emerald-500 flex items-center justify-center transition-colors">
                   <Plus className="w-6 h-6 text-gray-400 group-hover:text-emerald-400" />

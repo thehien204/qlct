@@ -11,7 +11,7 @@ import {
   Trash2, Search, Filter, Calendar, Users, 
   Utensils, Zap, GraduationCap, ShoppingBag, 
   HeartPulse, Car, Sparkles, Coins, ShoppingCart,
-  FileSpreadsheet
+  FileSpreadsheet, Edit2
 } from "lucide-react";
 import { downloadFamilyExcel } from "../utils/excel";
 
@@ -19,6 +19,7 @@ interface ExpenseListProps {
   expenses: Expense[];
   members: Member[];
   onDeleteExpense: (id: string) => void;
+  onEditExpense?: (expense: Expense) => void;
 }
 
 // Icon mapper helper
@@ -39,6 +40,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
   expenses,
   members,
   onDeleteExpense,
+  onEditExpense,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
@@ -249,20 +251,31 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                 </div>
 
                 {/* Price and Action triggers */}
-                <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+                <div className="text-right shrink-0 flex flex-col items-end gap-1.5 justify-between h-full">
                   <span className="font-extrabold text-white text-sm">{formatVND(exp.amount)}</span>
-                  <button
-                    id={`btn-del-exp-${exp.id}`}
-                    onClick={() => {
-                      if (window.confirm(`Bạn có chắc chắn muốn xóa chi tiêu "${exp.title}" không?`)) {
-                        onDeleteExpense(exp.id);
-                      }
-                    }}
-                    className="p-1.5 text-gray-600 hover:text-rose-400 hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer"
-                    title="Xóa khoản chi tiêu này"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex gap-1">
+                    {onEditExpense && (
+                      <button
+                        onClick={() => onEditExpense(exp)}
+                        className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-blue-950/30 rounded-lg transition-colors cursor-pointer"
+                        title="Sửa khoản chi tiêu này"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      id={`btn-del-exp-${exp.id}`}
+                      onClick={() => {
+                        if (window.confirm(`Bạn có chắc chắn muốn xóa chi tiêu "${exp.title}" không?`)) {
+                          onDeleteExpense(exp.id);
+                        }
+                      }}
+                      className="p-1.5 text-gray-500 hover:text-rose-400 hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer"
+                      title="Xóa khoản chi tiêu này"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );

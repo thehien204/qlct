@@ -1,31 +1,71 @@
-import React, { useState } from "react";
-import { Lock, PiggyBank, ArrowRight, ShieldAlert, Sparkles } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Lock, PiggyBank, ArrowRight, ShieldAlert, Sparkles, Users } from "lucide-react";
 import { motion } from "motion/react";
+import { Member } from "../types";
 
 interface LoginScreenProps {
-  onLoginSuccess: () => void;
+  onLoginSuccess: (member: Member) => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
-  const [password, setPassword] = useState("");
+  const [members, setMembers] = useState<Member[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetch("/api/auth/members")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setMembers(data);
+          if (data.length > 0) {
+            setSelectedMemberId(data[0].id);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("Error loading members for login:", err);
+        setError("Không thể tải danh sách thành viên từ máy chủ.");
+      });
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedMemberId) {
+      setError("Vui lòng chọn một thành viên để đăng nhập.");
+      return;
+    }
     setIsLoading(true);
     setError("");
 
-    // Simulate small latency for premium feels
-    setTimeout(() => {
-      const cleanPass = password.trim();
-      if (cleanPass === "giadinh" || cleanPass === "123456") {
-        onLoginSuccess();
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          memberId: selectedMemberId,
+          passcode: passcode.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        // Simulate small latency for premium feels
+        setTimeout(() => {
+          onLoginSuccess(data.member);
+        }, 300);
       } else {
-        setError("Mật khẩu gia đình chưa chính xác. Vui lòng kiểm tra lại!");
+        setError(data.error || "Mật khẩu chưa chính xác. Vui lòng kiểm tra lại!");
         setIsLoading(false);
       }
-    }, 600);
+    } catch (err) {
+      setError("Không thể kết nối đến máy chủ backend Java.");
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -55,7 +95,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               <span className="text-[9px] bg-emerald-600/20 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-bold">PRO</span>
             </h1>
             <p className="text-xs text-gray-500 mt-1 max-w-xs mx-auto">
-              Đăng nhập để tự động đồng bộ hóa dữ liệu Bảng tính chung của cả gia đình
+              Đăng nhập tài khoản cá nhân để xem số dư, đối soát chi tiêu của gia đình
             </p>
           </div>
         </div>
@@ -64,31 +104,54 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         <div className="bg-emerald-950/10 border border-emerald-900/20 rounded-2xl p-4 flex items-start gap-3">
           <Sparkles className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5 animate-pulse" />
           <p className="text-xs text-emerald-400/80 leading-relaxed">
-            Nhập mật khẩu gia đình của bạn để mở khóa. Sau khi đăng nhập, Spreadsheet ID và Access Token sẽ tự động được đồng bộ trực tuyến.
+            Chọn tên của bạn trong danh sách gia đình và nhập mã PIN/Mật khẩu (mặc định là <code className="bg-[#0c0c0c] px-1 py-0.5 rounded border border-[#222] text-white">123456</code>).
           </p>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          
+          {/* Member Selection Dropdown */}
+          <div className="space-y-2">
+            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider pl-1 flex items-center gap-1">
+              <Users className="w-3.5 h-3.5" /> Thành viên đăng nhập
+            </label>
+            <select
+              value={selectedMemberId}
+              onChange={(e) => setSelectedMemberId(e.target.value)}
+              disabled={isLoading}
+              className="w-full text-xs px-4 py-3 bg-[#0A0A0A] border border-[#222] rounded-2xl focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-[#101010] text-white font-medium cursor-pointer transition-all"
+            >
+              {members.length === 0 && (
+                <option value="">Đang tải danh sách thành viên...</option>
+              )}
+              {members.map((m) => (
+                <option key={m.id} value={m.id} className="bg-[#0A0A0A]">
+                  {m.name} ({m.role})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Passcode input */}
           <div className="space-y-2">
             <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider pl-1">
-              Mật khẩu gia đình
+              Mã PIN / Mật khẩu
             </label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-600">
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-650">
                 <Lock className="w-4 h-4" />
               </span>
               <input
                 type="password"
-                value={password}
+                value={passcode}
                 onChange={(e) => {
-                  setPassword(e.target.value);
+                  setPasscode(e.target.value);
                   if (error) setError("");
                 }}
                 disabled={isLoading}
-                placeholder="Nhập giadinh hoặc 123456"
+                placeholder="Nhập mã PIN đăng nhập"
                 className="w-full text-xs pl-10 pr-4 py-3.5 bg-[#0A0A0A] border border-[#222] rounded-2xl focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-[#101010] text-white font-mono placeholder-gray-650 transition-all"
-                autoFocus
               />
             </div>
           </div>
@@ -106,8 +169,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
           <button
             type="submit"
-            disabled={isLoading || !password}
-            className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-900/10 active:scale-[0.98]"
+            disabled={isLoading || !selectedMemberId}
+            className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 text-white font-bold text-xs py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-emerald-900/10 active:scale-[0.98]"
           >
             {isLoading ? (
               <span className="flex items-center gap-1.5">
@@ -115,11 +178,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                Đang mở khóa...
+                Đang đăng nhập...
               </span>
             ) : (
               <span className="flex items-center gap-1.5">
-                Mở khóa Gia Đình <ArrowRight className="w-4 h-4" />
+                Đăng Nhập Thành Viên <ArrowRight className="w-4 h-4" />
               </span>
             )}
           </button>

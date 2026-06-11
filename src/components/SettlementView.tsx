@@ -23,6 +23,7 @@ interface SettlementViewProps {
   payments: PaymentStatus[];
   onAddPayment: (month: string, fromId: string, toId: string, amount: number) => void;
   onDeletePayment: (paymentId: string) => void;
+  onUpdatePaymentAmount: (paymentId: string, newAmount: number) => void;
   pageAccessToken?: string;
   pageId?: string;
   showToast?: (message: string, type: "success" | "error" | "info") => void;
@@ -34,6 +35,7 @@ export const SettlementView: React.FC<SettlementViewProps> = ({
   payments,
   onAddPayment,
   onDeletePayment,
+  onUpdatePaymentAmount,
   pageAccessToken,
   pageId,
   showToast,
@@ -41,6 +43,10 @@ export const SettlementView: React.FC<SettlementViewProps> = ({
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthStr());
   const [activeRemindIndex, setActiveRemindIndex] = useState<number | null>(null);
   const [tone, setTone] = useState<"funny" | "polite" | "urgent">("funny");
+
+  // Payment amount inline editing states
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [editingAmountStr, setEditingAmountStr] = useState("");
 
   // AI loading and data states
   const [aiInsight, setAiInsight] = useState<AIInsight | null>(null);
@@ -462,15 +468,59 @@ export const SettlementView: React.FC<SettlementViewProps> = ({
                     if (!fromM || !toM) return null;
 
                     return (
-                      <div key={p.id} className="bg-[#0F0F0F] border border-[#222] rounded-xl p-2 flex items-center justify-between gap-3 text-xs">
+                      <div key={p.id} className="bg-[#0F0F0F] border border-[#222] rounded-xl p-2 flex items-center justify-between gap-3 text-xs font-sans">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1 flex-wrap">
                             <span className="font-bold text-rose-400/80 line-through text-[11px]">{fromM.name}</span>
-                            <span className="text-[9px] text-gray-550">đã trả</span>
+                            <span className="text-[9px] text-gray-555">đã trả</span>
                             <span className="font-bold text-emerald-400/80 line-through text-[11px]">{toM.name}</span>
                             <span className="text-[8px] font-bold bg-emerald-950/20 px-1.5 py-0.5 rounded-full border border-emerald-900/30 text-emerald-400">Đã trả</span>
                           </div>
-                          <div className="font-extrabold text-[11px] text-gray-400 mt-0.5">{formatVND(p.amount)}</div>
+                          
+                          {editingPaymentId === p.id ? (
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <input
+                                type="number"
+                                value={editingAmountStr}
+                                onChange={(e) => setEditingAmountStr(e.target.value)}
+                                className="bg-[#050505] border border-[#333] rounded px-2 py-1 text-xs text-white w-24 focus:outline-none focus:border-emerald-500 font-sans"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => {
+                                  const amt = Number(editingAmountStr) || 0;
+                                  onUpdatePaymentAmount(p.id, amt);
+                                  setEditingPaymentId(null);
+                                  showToast && showToast("Đã cập nhật số tiền thanh toán.", "success");
+                                }}
+                                className="bg-emerald-950/30 text-emerald-400 hover:bg-emerald-950/50 border border-emerald-900/40 p-1 rounded-lg cursor-pointer flex items-center justify-center"
+                                title="Lưu số tiền"
+                              >
+                                <Check className="w-3 h-3 font-bold" />
+                              </button>
+                              <button
+                                onClick={() => setEditingPaymentId(null)}
+                                className="text-gray-500 hover:text-gray-400 p-1 cursor-pointer text-xs"
+                                title="Hủy bỏ"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="font-extrabold text-[11px] text-gray-400 mt-0.5 flex items-center gap-1.5">
+                              <span>{formatVND(p.amount)}</span>
+                              <button
+                                onClick={() => {
+                                  setEditingPaymentId(p.id);
+                                  setEditingAmountStr(String(p.amount));
+                                }}
+                                className="text-gray-500 hover:text-white hover:scale-105 p-0.5 cursor-pointer transition-all text-[9px] border border-gray-800 rounded bg-[#0A0A0A] px-1"
+                                title="Sửa số tiền"
+                              >
+                                ✏️ Sửa số tiền
+                              </button>
+                            </div>
+                          )}
                         </div>
 
                         {/* Delete Payment Button */}
@@ -481,7 +531,7 @@ export const SettlementView: React.FC<SettlementViewProps> = ({
                               showToast && showToast(`Đã xóa giao dịch thanh toán & khôi phục nợ.`, "info");
                             }
                           }}
-                          className="text-rose-450 hover:text-rose-400 bg-rose-955/15 hover:bg-rose-955/25 border border-rose-900/20 px-2 py-1 rounded-lg transition-colors cursor-pointer text-[10px]"
+                          className="text-rose-455 hover:text-rose-400 bg-rose-955/15 hover:bg-rose-955/25 border border-rose-900/20 px-2 py-1 rounded-lg transition-colors cursor-pointer text-[10px]"
                           title="Hủy thanh toán & khôi phục lại nợ"
                         >
                           Hủy trả

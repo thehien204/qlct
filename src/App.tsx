@@ -17,15 +17,38 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
-  loadDataFromGoogleSheets, 
-  syncDataToGoogleSheets,
+  loadDataFromDb, 
+  syncDataToDb,
   PaymentStatus
 } from "./utils/googleSheets";
 import { LoginScreen } from "./components/LoginScreen";
+import { calculateBalances, computeSettlements } from "./utils/settlement";
 
-// CẤU HÌNH ĐƯỜNG DẪN GOOGLE APPS SCRIPT MẶC ĐỊNH CHO CẢ GIA ĐÌNH TẠI ĐÂY (NẾU DÙNG GITHUB PAGES)
-// Bạn dán đường dẫn Web App của bạn vào giữa hai dấu nháy kép, ví dụ: "https://script.google.com/macros/s/xxxx/exec"
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbRieGY4wugJ7BVy7IiYtIMiLZ0HRaAVMA5AXZtIs6hkNPIwpj2nCxK1duUpUmBlydJ6A/exec";
+function repairLegacyPayments(
+  payments: PaymentStatus[],
+  expenses: Expense[],
+  members: Member[]
+): PaymentStatus[] {
+  const months = Array.from(new Set(payments.map(p => p.month)));
+  const repaired = [...payments];
+
+  for (const month of months) {
+    const rawBalances = calculateBalances(members, expenses, month);
+    const rawSettlements = computeSettlements(rawBalances);
+
+    for (let i = 0; i < repaired.length; i++) {
+      const p = repaired[i];
+      if (p.month === month && (Number(p.amount) || 0) === 0) {
+        const match = rawSettlements.find(s => s.fromId === p.fromId && s.toId === p.toId);
+        repaired[i] = {
+          ...p,
+          amount: match ? match.amount : 1
+        };
+      }
+    }
+  }
+  return repaired;
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "expenses" | "settlement" | "members" | "settings">("dashboard");
@@ -92,15 +115,21 @@ export default function App() {
     return localStorage.getItem("fb_page_id") || "";
   });
 
-  // Google Sheets integration state (shared centrally to enable real-time reading and active synchronization)
-  const [gAppsScriptUrl, setGAppsScriptUrl] = useState(() => localStorage.getItem("gg_apps_script_url") || DEFAULT_APPS_SCRIPT_URL);
-  const [sheetsSyncStatus, setSheetsSyncStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [sheetsSyncMessage, setSheetsSyncMessage] = useState("");
+  // Local Database integration state
+  const [dbSyncStatus, setDbSyncStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [dbSyncMessage, setDbSyncMessage] = useState("");
 
   // Authentication state
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem("family_auth_login") === "true";
+  const [currentUser, setCurrentUser] = useState<Member | null>(() => {
+    const saved = localStorage.getItem("family_current_user");
+    try {
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
   });
+
+  const isLoggedIn = !!currentUser;
 
   // Toast Notification state & trigger
   const [toast, setToast] = useState<{ id: number; message: string; type: "success" | "error" | "info" } | null>(null);
@@ -113,35 +142,9 @@ export default function App() {
     }, 4000);
   };
 
-  // Fetch shared family configuration on mount or login
-  useEffect(() => {
-    const fetchFamilyConfig = async () => {
-      if (!isLoggedIn) return;
-      try {
-        const response = await fetch("/api/family-config");
-        if (response.ok) {
-          const contentType = response.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            const data = await response.json();
-            if (data.gAppsScriptUrl) {
-              setGAppsScriptUrl(data.gAppsScriptUrl);
-              localStorage.setItem("gg_apps_script_url", data.gAppsScriptUrl);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("Could not fetch family configuration from server, using local fallback.", err);
-      }
-    };
-
-    fetchFamilyConfig();
-  }, [isLoggedIn]);
-
   const handleLogout = () => {
-    setIsLoggedIn(false);
-    localStorage.removeItem("family_auth_login");
-    localStorage.removeItem("gg_apps_script_url");
-    setGAppsScriptUrl("");
+    setCurrentUser(null);
+    localStorage.removeItem("family_current_user");
   };
 
   // Sync to local storage
@@ -159,77 +162,86 @@ export default function App() {
 
   const lastFetchTimeRef = React.useRef<number>(0);
 
-  // Reusable Google Sheets Pull function
-  const pullFromSheets = async () => {
-    if (!gAppsScriptUrl || !isLoggedIn) return;
+  // Reusable Database Pull function
+  const pullFromDb = async () => {
+    if (!isLoggedIn) return;
     
     // Throttle fetches within 2 seconds to avoid duplicate fetches on mount/double-clicks
     const now = Date.now();
     if (now - lastFetchTimeRef.current < 2000) return;
     lastFetchTimeRef.current = now;
     
-    setSheetsSyncStatus("loading");
-    setSheetsSyncMessage("Đang tự động nạp dữ liệu từ Google Sheets...");
+    setDbSyncStatus("loading");
+    setDbSyncMessage("Đang tự động nạp dữ liệu từ Cơ sở dữ liệu...");
     try {
-      const data = await loadDataFromGoogleSheets(gAppsScriptUrl);
+      const data = await loadDataFromDb();
       
-      // If sheet is completely empty, keep things empty to match sheets perfectly
       if (data.members.length === 0) {
         setMembers([]);
         setExpenses([]);
         setPayments([]);
-        setSheetsSyncStatus("success");
-        setSheetsSyncMessage("Đồng bộ thành công! Bảng tính Google Sheets đang trống.");
+        setDbSyncStatus("success");
+        setDbSyncMessage("Đồng bộ thành công! Cơ sở dữ liệu đang trống.");
       } else {
         setMembers(data.members);
         setExpenses(data.expenses);
         if (data.payments !== undefined) {
           setPayments(data.payments);
         }
-        setSheetsSyncStatus("success");
-        setSheetsSyncMessage(`Đồng bộ Google Sheets thành công! Nạp ${data.members.length} thành viên & ${data.expenses.length} giao dịch.`);
+        setDbSyncStatus("success");
+        setDbSyncMessage(`Nạp thành công ${data.members.length} thành viên & ${data.expenses.length} giao dịch.`);
       }
-      setTimeout(() => setSheetsSyncStatus("idle"), 4000);
+      setTimeout(() => setDbSyncStatus("idle"), 4000);
     } catch (err: any) {
-      console.warn("Sheets pull error:", err);
-      setSheetsSyncStatus("error");
-      setSheetsSyncMessage(`Tải tự động thất bại: ${err.message || "Kiểm tra URL Apps Script"}. Hệ thống đang chạy Ngoại tuyến.`);
+      console.warn("Database pull error:", err);
+      setDbSyncStatus("error");
+      setDbSyncMessage(`Tải tự động thất bại: ${err.message || err}. Hệ thống đang chạy Ngoại tuyến.`);
     }
   };
 
-  // Google Sheets Auto-Pull on initial load, login, or credentials change
+  // Auto-Pull on initial load or login
   useEffect(() => {
     if (isLoggedIn) {
-      pullFromSheets();
+      pullFromDb();
     }
-  }, [gAppsScriptUrl, isLoggedIn]);
+  }, [isLoggedIn]);
 
-  // Pull from sheets when switching tabs to ensure fresh data (except settings tab to avoid interrupting inputs)
+  // Pull from database when switching tabs to ensure fresh data (except settings tab)
   useEffect(() => {
     if (isLoggedIn && activeTab !== "settings") {
-      pullFromSheets();
+      pullFromDb();
     }
   }, [activeTab, isLoggedIn]);
 
-  // Write-through helper function to sync to Sheets in background
-  const syncWithSheetsInBg = async (
+  // Self-healing legacy payments repair
+  useEffect(() => {
+    if (members.length > 0 && expenses.length > 0 && payments.length > 0) {
+      const hasLegacy = payments.some(p => (Number(p.amount) || 0) === 0);
+      if (hasLegacy) {
+        const repaired = repairLegacyPayments(payments, expenses, members);
+        setPayments(repaired);
+        syncWithDbInBg(members, expenses, repaired);
+      }
+    }
+  }, [members, expenses, payments]);
+
+  // Write-through helper function to sync to Database in background
+  const syncWithDbInBg = async (
     updatedMembers: Member[], 
     updatedExpenses: Expense[], 
     updatedPayments: PaymentStatus[] = payments
   ) => {
-    if (!gAppsScriptUrl) return;
-    
-    setSheetsSyncStatus("loading");
-    setSheetsSyncMessage("Đang tự động ghi đè đồng bộ lên Google Sheets...");
+    setDbSyncStatus("loading");
+    setDbSyncMessage("Đang tự động ghi đồng bộ lên Cơ sở dữ liệu...");
     try {
-      await syncDataToGoogleSheets(gAppsScriptUrl, updatedMembers, updatedExpenses, updatedPayments);
-      setSheetsSyncStatus("success");
-      setSheetsSyncMessage("Tự động lưu dữ liệu lên Google Sheets thành công!");
-      setTimeout(() => setSheetsSyncStatus("idle"), 3000);
+      await syncDataToDb(updatedMembers, updatedExpenses, updatedPayments);
+      setDbSyncStatus("success");
+      setDbSyncMessage("Tự động lưu dữ liệu lên Cơ sở dữ liệu thành công!");
+      setTimeout(() => setDbSyncStatus("idle"), 3000);
     } catch (err: any) {
-      console.error("Auto-sync back error:", err);
-      setSheetsSyncStatus("error");
-      setSheetsSyncMessage(`Không thể tự động khóa dữ liệu lên Sheets: ${err.message || err}`);
+      console.error("Auto-sync database error:", err);
+      setDbSyncStatus("error");
+      setDbSyncMessage(`Không thể tự động khóa dữ liệu lên Cơ sở dữ liệu: ${err.message || err}`);
     }
   };
 
@@ -237,22 +249,55 @@ export default function App() {
   const handleUpdateMember = (updatedMember: Member) => {
     const updated = members.map((m) => (m.id === updatedMember.id ? updatedMember : m));
     setMembers(updated);
-    syncWithSheetsInBg(updated, expenses, payments);
+    syncWithDbInBg(updated, expenses, payments);
     showToast(`Đã cập nhật thông tin "${updatedMember.name}" thành công!`, "success");
   };
 
   const handleAddMember = (newMember: Member) => {
     const updated = [...members, newMember];
     setMembers(updated);
-    syncWithSheetsInBg(updated, expenses, payments);
+    syncWithDbInBg(updated, expenses, payments);
     showToast(`Đã thêm thành viên "${newMember.name}" thành công!`, "success");
   };
 
   const handleDeleteMember = (id: string) => {
+    // Calculate overall net balance for this member
+    let balance = 0;
+    expenses.forEach((e) => {
+      if (e.paidById === id) {
+        balance += e.amount;
+      }
+      const bens = e.beneficiaryIds || [];
+      if (bens.includes(id)) {
+        balance -= e.amount / bens.length;
+      }
+    });
+
+    payments.forEach((p) => {
+      if (p.isSettled) {
+        const amt = Number(p.amount) || 0;
+        if (p.fromId === id) {
+          balance += amt;
+        }
+        if (p.toId === id) {
+          balance -= amt;
+        }
+      }
+    });
+
+    // If net balance is not zero (allowing 10 VND rounding tolerance)
+    if (Math.abs(balance) > 10) {
+      showToast(
+        `Không thể xoá vì thành viên này vẫn còn khoản nợ chưa tất toán (Số dư: ${formatVND(balance)}). Vui lòng tất toán trước khi xoá!`,
+        "error"
+      );
+      return;
+    }
+
     const memberName = members.find((m) => m.id === id)?.name || "thành viên";
     const updated = members.filter((m) => m.id !== id);
     setMembers(updated);
-    syncWithSheetsInBg(updated, expenses, payments);
+    syncWithDbInBg(updated, expenses, payments);
     showToast(`Đã xoá ${memberName} khỏi danh sách gia đình.`, "info");
   };
 
@@ -264,15 +309,33 @@ export default function App() {
     };
     const updated = [fresh, ...expenses];
     setExpenses(updated);
-    syncWithSheetsInBg(members, updated, payments);
+    syncWithDbInBg(members, updated, payments);
     showToast(`Ghi nhận khoản chi "${newExp.title}" thành công!`, "success");
+  };
+
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+
+  const handleUpdateExpense = (updatedExp: Expense) => {
+    const updated = expenses.map((e) => (e.id === updatedExp.id ? updatedExp : e));
+    setExpenses(updated);
+    syncWithDbInBg(members, updated, payments);
+    setEditingExpense(null);
+    showToast(`Đã cập nhật khoản chi "${updatedExp.title}" thành công!`, "success");
+  };
+
+  const handleEditExpense = (expense: Expense) => {
+    setEditingExpense(expense);
+    setActiveTab("expenses");
   };
 
   const handleDeleteExpense = (id: string) => {
     const expenseTitle = expenses.find((e) => e.id === id)?.title || "khoản chi";
     const updated = expenses.filter((exp) => exp.id !== id);
     setExpenses(updated);
-    syncWithSheetsInBg(members, updated, payments);
+    if (editingExpense && editingExpense.id === id) {
+      setEditingExpense(null);
+    }
+    syncWithDbInBg(members, updated, payments);
     showToast(`Đã xoá khoản chi "${expenseTitle}".`, "info");
   };
 
@@ -296,13 +359,19 @@ export default function App() {
     };
     const updated = [...payments, newPayment];
     setPayments(updated);
-    syncWithSheetsInBg(members, expenses, updated);
+    syncWithDbInBg(members, expenses, updated);
   };
 
   const handleDeletePayment = (paymentId: string) => {
     const updated = payments.filter((p) => p.id !== paymentId);
     setPayments(updated);
-    syncWithSheetsInBg(members, expenses, updated);
+    syncWithDbInBg(members, expenses, updated);
+  };
+
+  const handleUpdatePaymentAmount = (paymentId: string, newAmount: number) => {
+    const updated = payments.map((p) => p.id === paymentId ? { ...p, amount: newAmount } : p);
+    setPayments(updated);
+    syncWithDbInBg(members, expenses, updated);
   };
 
   const handleImportData = (
@@ -339,10 +408,10 @@ export default function App() {
     setPayments(Array.from(paymentsMap.values()));
   };
 
-  if (!isLoggedIn) {
-    return <LoginScreen onLoginSuccess={() => {
-      setIsLoggedIn(true);
-      localStorage.setItem("family_auth_login", "true");
+  if (!currentUser) {
+    return <LoginScreen onLoginSuccess={(member) => {
+      setCurrentUser(member);
+      localStorage.setItem("family_current_user", JSON.stringify(member));
     }} />;
   }
 
@@ -368,29 +437,22 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            {/* Google Sheets Active Database sync status */}
-            {gAppsScriptUrl ? (
-              <div id="sheets-sync-header-badge" className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-emerald-950/20 border border-emerald-900/30 text-emerald-400 text-[10px] sm:text-xs font-semibold">
-                {sheetsSyncStatus === "loading" ? (
-                  <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" />
-                ) : sheetsSyncStatus === "error" ? (
-                  <CloudOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-red-400" />
-                ) : (
-                  <Database className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 animate-pulse" />
-                )}
-                <span className="max-w-[70px] sm:max-w-[200px] truncate">
-                  {sheetsSyncStatus === "loading" ? "Đang đồng bộ..." : sheetsSyncStatus === "error" ? "Lỗi Sheets" : "Google Sheets"}
-                </span>
-                {sheetsSyncStatus === "success" && (
-                  <span className="text-[10px] text-emerald-500 font-normal pl-1 border-l border-emerald-850/40 hidden xs:inline">Cập nhật</span>
-                )}
-              </div>
-            ) : (
-              <div id="sheets-offline-header-badge" className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-[#141414] border border-[#222] text-gray-500 text-[10px] sm:text-xs font-medium">
-                <CloudOff className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                <span className="max-w-[70px] sm:max-w-[150px] truncate">Ngoại tuyến</span>
-              </div>
-            )}
+            {/* Database sync status */}
+            <div id="db-sync-header-badge" className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-emerald-950/20 border border-emerald-900/30 text-emerald-400 text-[10px] sm:text-xs font-semibold">
+              {dbSyncStatus === "loading" ? (
+                <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" />
+              ) : dbSyncStatus === "error" ? (
+                <CloudOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-red-400" />
+              ) : (
+                <Database className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 animate-pulse" />
+              )}
+              <span className="max-w-[70px] sm:max-w-[200px] truncate">
+                {dbSyncStatus === "loading" ? "Đang đồng bộ..." : dbSyncStatus === "error" ? "Mất kết nối DB" : "Cơ sở dữ liệu H2"}
+              </span>
+              {dbSyncStatus === "success" && (
+                <span className="text-[10px] text-emerald-500 font-normal pl-1 border-l border-emerald-850/40 hidden xs:inline">Cập nhật</span>
+              )}
+            </div>
 
             <div className="hidden md:flex items-center gap-1.5 text-xs text-gray-500 font-medium">
               <span className="flex h-2 w-2 relative">
@@ -416,32 +478,7 @@ export default function App() {
       {/* Main Stage viewport */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
-        {/* Google Sheets Always Connect banner */}
-        {!gAppsScriptUrl && (
-          <motion.div 
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-amber-950/20 border border-amber-900/40 rounded-2xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-pulse-subtle"
-          >
-            <div className="flex items-start gap-3">
-              <div className="bg-amber-500/10 text-amber-400 p-2.5 rounded-xl border border-amber-800/25 mt-0.5">
-                <AlertCircle className="w-5 h-5 text-amber-400" />
-              </div>
-              <div>
-                <h3 className="text-white font-bold text-sm">Chưa liên kết Google Sheets</h3>
-                <p className="text-amber-400/80 text-xs mt-1 leading-relaxed max-w-2xl">
-                  Để bảo toàn dữ liệu chi tiêu lâu dài và chia sẻ cùng các liên kết Messenger, hãy cấu hình liên kết Bảng tính Google Sheets. Ứng dụng sẽ đồng bộ mọi cập nhật trực tiếp lên Drive của bạn!
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setActiveTab("settings")}
-              className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
-            >
-              <Database className="w-3.5 h-3.5" /> Kết nối Google Sheets
-            </button>
-          </motion.div>
-        )}
+
 
         {/* Navigation Tabs Bar */}
         <div className="flex border border-[#222] overflow-x-auto whitespace-nowrap scrollbar-none gap-1 bg-[#0F0F0F] p-1.5 rounded-xl shadow-lg">
@@ -531,13 +568,21 @@ export default function App() {
                 className="grid grid-cols-1 lg:grid-cols-12 gap-6"
               >
                 <div className="lg:col-span-5">
-                  <ExpenseForm members={members} onAddExpense={handleAddExpense} />
+                  <ExpenseForm 
+                    members={members} 
+                    onAddExpense={handleAddExpense} 
+                    editingExpense={editingExpense}
+                    onUpdateExpense={handleUpdateExpense}
+                    onCancelEdit={() => setEditingExpense(null)}
+                    currentUser={currentUser}
+                  />
                 </div>
                 <div className="lg:col-span-7">
                   <ExpenseList 
                     expenses={expenses} 
                     members={members} 
                     onDeleteExpense={handleDeleteExpense} 
+                    onEditExpense={handleEditExpense}
                   />
                 </div>
               </motion.div>
@@ -557,6 +602,7 @@ export default function App() {
                   payments={payments}
                   onAddPayment={handleAddPayment}
                   onDeletePayment={handleDeletePayment}
+                  onUpdatePaymentAmount={handleUpdatePaymentAmount}
                   pageAccessToken={pageAccessToken}
                   pageId={pageId}
                   showToast={showToast}
@@ -597,12 +643,6 @@ export default function App() {
                   pageId={pageId}
                   onSaveFbConfig={handleSaveFbConfig}
                   onImportData={handleImportData}
-                  gAppsScriptUrl={gAppsScriptUrl}
-                  setGAppsScriptUrl={setGAppsScriptUrl}
-                  sheetsSyncStatus={sheetsSyncStatus}
-                  setSheetsSyncStatus={setSheetsSyncStatus}
-                  sheetsSyncMessage={sheetsSyncMessage}
-                  setSheetsSyncMessage={setSheetsSyncMessage}
                 />
               </motion.div>
             )}

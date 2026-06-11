@@ -124,232 +124,30 @@ interface AdviceCacheEntry {
 let adviceCache: AdviceCacheEntry | null = null;
 const CACHE_TTL_MS = 15 * 60 * 1000; // Cache for 15 minutes to save API quotas
 
-// API Route: Smart financial analysis + localized reminder generator using Gemini
-app.post("/api/gemini/advice", async (req, res) => {
-  const { expenses, members, month, debts } = req.body;
-
-  if (!expenses || !members) {
-    return res.status(400).json({ error: "Thiếu thông tin chi tiêu hoặc thành viên gia đình." });
-  }
-
-  // Build a deterministic data signature
-  const expensesSum = expenses.reduce((sum: number, e: any) => sum + (Number(e.amount) || 0), 0);
-  const debtsSum = (debts || []).reduce((sum: number, d: any) => sum + (Number(d.amount) || 0), 0);
-  const inputSignature = JSON.stringify({
-    month: month || "all",
-    membersCount: members.length,
-    expensesCount: expenses.length,
-    expensesSum,
-    debtsCount: (debts || []).length,
-    debtsSum
-  });
-
-  // Check if cache exists and is fresh
-  const now = Date.now();
-  if (adviceCache && adviceCache.inputSignature === inputSignature && (now - adviceCache.timestamp) < CACHE_TTL_MS) {
-    console.info("Returning fresh cached advice (instant 0ms response).");
-    return res.json(adviceCache.data);
-  }
-
-  // If Gemini API Key is missing, fallback gracefully to dynamic advisor
-  if (!hasGeminiKey()) {
-    console.info("Gemini API Key missing, falling back to smart local advice.");
-    const fallbackData = generateSmartFallbackAdvice(expenses, members, debts, month);
-    fallbackData.summary = "💡 (Cố vấn Cục bộ) " + fallbackData.summary;
-    return res.json(fallbackData);
-  }
-
+// Forward all /api/* requests directly to the Spring Boot backend running on port 8080
+app.all("/api/*", async (req, res) => {
+  const targetUrl = `http://localhost:8080${req.originalUrl}`;
   try {
-    const prompt = `
-Hãy là một Cố vấn Tài chính Gia đình thông minh, vui vẻ và am hiểu văn hóa gia đình Việt Nam.
-Tôi có dữ liệu chi tiêu hàng tháng (${month || "tất cả các tháng"}) của một gia đình 5 người:
-Các thành viên: ${JSON.stringify(members.map((m: any) => `${m.name} (Vai trò: ${m.role})`))}
-Chi tiết các khoản chi tiêu: ${JSON.stringify(
-      expenses.map((e: any) => ({
-        tiêu_đề: e.title,
-        số_tiền: e.amount,
-        người_mua: members.find((m: any) => m.id === e.paidById)?.name || "Không rõ",
-        mua_cho_ai: e.beneficiaryIds.map((bId: any) => members.find((m: any) => m.id === bId)?.name).join(", "),
-        mã_danh_mục: e.categoryId,
-        ngày: e.date,
-        ghi_chú: e.notes || "",
-      }))
-    )}
-
-Các khoản nợ đang cần thanh toán chia tiền tháng này:
-${JSON.stringify(
-  debts.map((d: any) => ({
-    người_nợ: members.find((m: any) => m.id === d.fromId)?.name || "Không rõ",
-    người_nhận: members.find((m: any) => m.id === d.toId)?.name || "Không rõ",
-    số_tiền: d.amount,
-  }))
-)}
-
-Hãy phân tích chi tiết dữ liệu này và trả về phản hồi định dạng JSON chính xác khớp với schema cấu trúc sau:
-{
-  "summary": "Tóm tắt ngắn gọn (1-2 câu) về tình hình chi tiêu của gia đình trong tháng này, khen ngợi hoặc động viên một cách dí dỏm bằng tiếng Việt ấm áp.",
-  "categoriesAdvice": "Phân tích xem danh mục nào gia đình chi nhiều nhất (ví dụ: Ăn uống, mua sắm,...), mức độ hợp lý và lời khuyên cụ thể để tối ưu hóa danh mục đó.",
-  "debtAdvice": "Lời khuyên giải quyết các khoản chia tiền (nợ) hiện tại giữa các thành viên sao cho êm thấm, vui vẻ nhất.",
-  "savingTips": "3 mẹo tiết kiệm tiền thiết thực cho gia đình 5 người dựa trên đặc trưng chi tiêu thực tế của họ ở trên.",
-  "reminders": [
-    {
-      "fromName": "Tên người nợ",
-      "toName": "Tên người nhận",
-      "amount": 100000,
-      "funnyMessage": "Tin nhắn nhắc nợ thiết kế riêng siêu hài hước, dễ thương, không gây căng thẳng.",
-      "politeMessage": "Tin nhắn nhắc nợ lịch sự, trang trọng, ấm áp tình cảm gia đình.",
-      "urgentMessage": "Tin nhắn nhắc nợ hối thúc kiểu tinh nghịch dọa dẫm vui vẻ (ví dụ: không trả tiền bố cắt cơm tối)."
-    }
-  ]
-}
-`.trim();
-
-    // Generate strict JSON response using responseSchema and system instructions
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        systemInstruction: "Bạn là chuyên gia tư vấn quản lý tài chính gia đình số 1 Việt Nam. Trả lời bằng định dạng JSON chính xác đúng schema.",
-        responseSchema: {
-          type: Type.OBJECT,
-          required: ["summary", "categoriesAdvice", "debtAdvice", "savingTips", "reminders"],
-          properties: {
-            summary: { type: Type.STRING },
-            categoriesAdvice: { type: Type.STRING },
-            debtAdvice: { type: Type.STRING },
-            savingTips: { type: Type.STRING },
-            reminders: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                required: ["fromName", "toName", "amount", "funnyMessage", "politeMessage", "urgentMessage"],
-                properties: {
-                  fromName: { type: Type.STRING },
-                  toName: { type: Type.STRING },
-                  amount: { type: Type.NUMBER },
-                  funnyMessage: { type: Type.STRING },
-                  politeMessage: { type: Type.STRING },
-                  urgentMessage: { type: Type.STRING },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    const bodyText = response.text || "{}";
-    const data = JSON.parse(bodyText.trim());
-
-    // Cache successful response
-    adviceCache = {
-      inputSignature,
-      data,
-      timestamp: Date.now()
-    };
-
-    return res.json(data);
-  } catch (error: any) {
-    // Gracefully activate local advisor without writing noisy error/quota text to standard logs
-    console.log("Local smart advisor activated (Dynamic low-latency logic fallback).");
-    const fallbackData = generateSmartFallbackAdvice(expenses, members, debts, month);
-    fallbackData.summary = "💡 (Cố vấn Khôi phục Cục bộ) " + fallbackData.summary;
-
-    // Cache fallback response too to prevent hammering API repeatedly during error states
-    adviceCache = {
-      inputSignature,
-      data: fallbackData,
-      timestamp: Date.now()
-    };
-
-    return res.json(fallbackData);
-  }
-});
-
-// API Route: Send message to Facebook Messenger using Meta Graph API
-app.post("/api/send-messenger", async (req, res) => {
-  try {
-    const { message, pageAccessToken, pageId, recipientId, testMode } = req.body;
-
-    if (!message || !recipientId) {
-      return res.status(400).json({ error: "Thiếu nội dung tin nhắn hoặc ID người nhận (PSID)." });
-    }
-
-    // In local demo or if keys are not provided, we can allow a simulation mode if requested,
-    // but we execute a REAL request if the credentials are provided
-    const token = pageAccessToken || process.env.FB_PAGE_ACCESS_TOKEN;
-    const page = pageId || process.env.FB_PAGE_ID;
-
-    if (testMode || !token) {
-      // Simulate successful delivery so the user feels the integration flow without needing real FB approval immediately
-      return res.json({
-        success: true,
-        simulated: true,
-        message: "Mô phỏng: Gửi tin nhắn thành công qua webhook/FB API!",
-        sentMessage: message,
-        recipient: recipientId
-      });
-    }
-
-    // Real API Request to Facebook Page Send API
-    const url = `https://graph.facebook.com/v19.0/me/messages?access_token=${token}`;
-    const response = await fetch(url, {
-      method: "POST",
+    const response = await fetch(targetUrl, {
+      method: req.method,
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        recipient: { id: recipientId },
-        message: { text: message },
-      }),
+      body: ["GET", "HEAD"].includes(req.method) ? undefined : JSON.stringify(req.body),
     });
 
-    const result = await response.json();
+    res.status(response.status);
+    response.headers.forEach((value, name) => {
+      res.setHeader(name, value);
+    });
 
-    if (response.ok) {
-      res.json({
-        success: true,
-        simulated: false,
-        data: result,
-      });
-    } else {
-      res.status(response.status).json({
-        success: false,
-        error: result.error?.message || "Lỗi khi gửi yêu cầu đến API Facebook.",
-        fullError: result,
-      });
-    }
+    const text = await response.text();
+    res.send(text);
   } catch (error: any) {
-    console.error("Facebook Send API Error:", error);
-    res.status(500).json({ error: error.message || "Lỗi hệ thống khi gửi tin nhắn Facebook." });
-  }
-});
-
-const configPath = path.join(process.cwd(), "family-config.json");
-
-// API Route: Get shared family configuration
-app.get("/api/family-config", (req, res) => {
-  try {
-    if (fs.existsSync(configPath)) {
-      const data = fs.readFileSync(configPath, "utf-8");
-      return res.json(JSON.parse(data));
-    }
-  } catch (error) {
-    console.error("Error reading family-config.json", error);
-  }
-  return res.json({ gAppsScriptUrl: "" });
-});
-
-// API Route: Save shared family configuration
-app.post("/api/family-config", (req, res) => {
-  try {
-    const { gAppsScriptUrl } = req.body;
-    fs.writeFileSync(configPath, JSON.stringify({ gAppsScriptUrl }, null, 2), "utf-8");
-    return res.json({ success: true });
-  } catch (error: any) {
-    console.error("Error writing family-config.json", error);
-    return res.status(500).json({ error: error.message || "Không thể lưu cấu hình" });
+    console.error(`Error proxying request to backend at port 8080 (${targetUrl}):`, error);
+    res.status(502).json({
+      error: `Không thể kết nối đến Spring Boot backend (cổng 8080): ${error.message}. Hãy chắc chắn rằng bạn đã khởi chạy backend Java.`,
+    });
   }
 });
 

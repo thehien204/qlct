@@ -10,6 +10,7 @@ export interface Member {
   avatarColor: string;
   messengerLink?: string; // e.g. https://m.me/yourusername
   messengerId?: string;   // Page-Scoped ID (PSID) for real FB messenger sending
+  passcode?: string;
 }
 
 export interface Expense {

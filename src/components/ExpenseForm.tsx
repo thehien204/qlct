@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Member, Expense } from "../types";
 import { DEFAULT_CATEGORIES } from "../utils/categories";
 import { PlusCircle, Info, Calendar, DollarSign, Tag, CheckSquare, Square, RefreshCcw } from "lucide-react";
@@ -12,9 +12,20 @@ import { motion } from "motion/react";
 interface ExpenseFormProps {
   members: Member[];
   onAddExpense: (expense: Omit<Expense, "id" | "createdAt">) => void;
+  editingExpense?: Expense | null;
+  onUpdateExpense?: (expense: Expense) => void;
+  onCancelEdit?: () => void;
+  currentUser?: Member | null;
 }
 
-export const ExpenseForm: React.FC<ExpenseFormProps> = ({ members, onAddExpense }) => {
+export const ExpenseForm: React.FC<ExpenseFormProps> = ({ 
+  members, 
+  onAddExpense,
+  editingExpense,
+  onUpdateExpense,
+  onCancelEdit,
+  currentUser
+}) => {
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState<string>("");
   const [categoryId, setCategoryId] = useState("food");
@@ -22,10 +33,31 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ members, onAddExpense 
     const today = new Date();
     return today.toISOString().split("T")[0];
   });
-  const [paidById, setPaidById] = useState(() => (members[0] ? members[0].id : ""));
+  const [paidById, setPaidById] = useState(() => (currentUser ? currentUser.id : (members[0] ? members[0].id : "")));
   const [beneficiaryIds, setBeneficiaryIds] = useState<string[]>(() => members.map((m) => m.id));
   const [notes, setNotes] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    if (editingExpense) {
+      setTitle(editingExpense.title);
+      setAmount(formatNumberWithDots(String(editingExpense.amount)));
+      setCategoryId(editingExpense.categoryId);
+      setDate(editingExpense.date);
+      setPaidById(editingExpense.paidById);
+      setBeneficiaryIds(editingExpense.beneficiaryIds || []);
+      setNotes(editingExpense.notes || "");
+    } else {
+      setTitle("");
+      setAmount("");
+      setCategoryId("food");
+      const today = new Date();
+      setDate(today.toISOString().split("T")[0]);
+      setPaidById(currentUser ? currentUser.id : (members[0] ? members[0].id : ""));
+      setBeneficiaryIds(members.map((m) => m.id));
+      setNotes("");
+    }
+  }, [editingExpense, currentUser, members]);
 
   const handleToggleBeneficiary = (mId: string) => {
     setBeneficiaryIds((prev) => {
@@ -77,29 +109,42 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ members, onAddExpense 
       return;
     }
 
-    onAddExpense({
-      title: title.trim(),
-      amount: parsedAmount,
-      categoryId,
-      date,
-      paidById,
-      beneficiaryIds,
-      notes: notes.trim() || undefined,
-    });
+    if (editingExpense) {
+      onUpdateExpense!({
+        ...editingExpense,
+        title: title.trim(),
+        amount: parsedAmount,
+        categoryId,
+        date,
+        paidById,
+        beneficiaryIds,
+        notes: notes.trim() || undefined,
+      });
+      setErrorMsg("");
+    } else {
+      onAddExpense({
+        title: title.trim(),
+        amount: parsedAmount,
+        categoryId,
+        date,
+        paidById,
+        beneficiaryIds,
+        notes: notes.trim() || undefined,
+      });
 
-    // Reset Form
-    setTitle("");
-    setAmount("");
-    setNotes("");
-    setErrorMsg("");
-    // keep date and paidById for rapid entry convenience
+      // Reset Form
+      setTitle("");
+      setAmount("");
+      setNotes("");
+      setErrorMsg("");
+    }
   };
 
   return (
     <div className="bg-[#141414] rounded-2xl p-6 border border-[#222] shadow-lg">
       <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
         <PlusCircle className="text-emerald-500 w-5 h-5" />
-        Thêm Khoản Chi Tiêu Mới
+        {editingExpense ? "Sửa Khoản Chi Tiêu" : "Thêm Khoản Chi Tiêu Mới"}
       </h3>
 
       <form id="expense-form" onSubmit={handleSubmit} className="space-y-4">
@@ -289,13 +334,24 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({ members, onAddExpense 
         </div>
 
         {/* Submit button */}
-        <button
-          id="btn-add-expense-submit"
-          type="submit"
-          className="w-full mt-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-        >
-          <PlusCircle className="w-4.5 h-4.5" /> Ghi Nhận Chi Tiêu
-        </button>
+        <div className="flex gap-2.5 mt-2">
+          {editingExpense && (
+            <button
+              type="button"
+              onClick={onCancelEdit}
+              className="flex-1 bg-transparent hover:bg-white/5 border border-[#333] text-gray-400 text-xs font-semibold py-3 px-4 rounded-xl transition-colors cursor-pointer"
+            >
+              Hủy bỏ
+            </button>
+          )}
+          <button
+            id="btn-add-expense-submit"
+            type="submit"
+            className={`${editingExpense ? "flex-2" : "w-full"} bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer`}
+          >
+            <PlusCircle className="w-4.5 h-4.5" /> {editingExpense ? "Cập Nhật Chi Tiêu" : "Ghi Nhận Chi Tiêu"}
+          </button>
+        </div>
       </form>
     </div>
   );
