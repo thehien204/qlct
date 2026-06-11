@@ -22,7 +22,7 @@ import {
   PaymentStatus
 } from "./utils/googleSheets";
 import { LoginScreen } from "./components/LoginScreen";
-import { calculateBalances, computeSettlements } from "./utils/settlement";
+import { calculateBalances, computeSettlements, formatVND } from "./utils/settlement";
 
 function repairLegacyPayments(
   payments: PaymentStatus[],
