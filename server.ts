@@ -124,9 +124,11 @@ interface AdviceCacheEntry {
 let adviceCache: AdviceCacheEntry | null = null;
 const CACHE_TTL_MS = 15 * 60 * 1000; // Cache for 15 minutes to save API quotas
 
-// Forward all /api/* requests directly to the Spring Boot backend running on port 8080
+const BACKEND_URL = process.env.BACKEND_URL || "https://qlct-be.onrender.com";
+
+// Forward all /api/* requests directly to the Spring Boot backend
 app.all("/api/*", async (req, res) => {
-  const targetUrl = `http://localhost:8080${req.originalUrl}`;
+  const targetUrl = `${BACKEND_URL}${req.originalUrl}`;
   try {
     const response = await fetch(targetUrl, {
       method: req.method,
@@ -144,12 +146,13 @@ app.all("/api/*", async (req, res) => {
     const text = await response.text();
     res.send(text);
   } catch (error: any) {
-    console.error(`Error proxying request to backend at port 8080 (${targetUrl}):`, error);
+    console.error(`Error proxying request to backend at ${BACKEND_URL} (${targetUrl}):`, error);
     res.status(502).json({
-      error: `Không thể kết nối đến Spring Boot backend (cổng 8080): ${error.message}. Hãy chắc chắn rằng bạn đã khởi chạy backend Java.`,
+      error: `Không thể kết nối đến Spring Boot backend (${BACKEND_URL}): ${error.message}.`,
     });
   }
 });
+
 
 // Vite middleware integration
 async function startServer() {
