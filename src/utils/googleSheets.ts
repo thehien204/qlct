@@ -5,12 +5,19 @@
 
 import { Member, Expense } from "../types";
 
+export interface PaymentStatus {
+  month: string;
+  fromId: string;
+  toId: string;
+  isSettled: boolean;
+}
+
 /**
- * Reads members and expenses from Google Sheet database via Apps Script Web App.
+ * Reads members, expenses, and payments from Google Sheet database via Apps Script Web App.
  */
 export async function loadDataFromGoogleSheets(
   webAppUrl: string
-): Promise<{ members: Member[]; expenses: Expense[] }> {
+): Promise<{ members: Member[]; expenses: Expense[]; payments: PaymentStatus[] }> {
   if (!webAppUrl) {
     throw new Error("Đường dẫn Google Apps Script Web App chưa được cấu hình.");
   }
@@ -49,16 +56,24 @@ export async function loadDataFromGoogleSheets(
     createdAt: Number(e.createdAt) || Date.now(),
   })).filter((e: Expense) => e.id && e.title && e.amount > 0);
 
-  return { members, expenses };
+  const payments: PaymentStatus[] = (data.payments || []).map((p: any) => ({
+    month: String(p.month || ""),
+    fromId: String(p.fromId || ""),
+    toId: String(p.toId || ""),
+    isSettled: String(p.isSettled) === "true" || p.isSettled === true,
+  })).filter((p: PaymentStatus) => p.month && p.fromId && p.toId);
+
+  return { members, expenses, payments };
 }
 
 /**
- * Saves current members and expenses to Google Sheet via Apps Script Web App.
+ * Saves current members, expenses, and payments to Google Sheet via Apps Script Web App.
  */
 export async function syncDataToGoogleSheets(
   webAppUrl: string,
   members: Member[],
-  expenses: Expense[]
+  expenses: Expense[],
+  payments: PaymentStatus[]
 ): Promise<boolean> {
   if (!webAppUrl) {
     throw new Error("Đường dẫn Google Apps Script Web App chưa được cấu hình.");
@@ -80,9 +95,15 @@ export async function syncDataToGoogleSheets(
       categoryId: e.categoryId || "others",
       date: e.date || "",
       paidById: e.paidById || "",
-      beneficiaryIds: (e.beneficiaryIds || []).join(","),
+      beneficiaryIds: Array.isArray(e.beneficiaryIds) ? e.beneficiaryIds : [],
       notes: e.notes || "",
       createdAt: e.createdAt || Date.now()
+    })),
+    payments: payments.map(p => ({
+      month: p.month,
+      fromId: p.fromId,
+      toId: p.toId,
+      isSettled: p.isSettled
     }))
   };
 

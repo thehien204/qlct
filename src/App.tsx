@@ -24,7 +24,7 @@ import { LoginScreen } from "./components/LoginScreen";
 
 // CẤU HÌNH ĐƯỜNG DẪN GOOGLE APPS SCRIPT MẶC ĐỊNH CHO CẢ GIA ĐÌNH TẠI ĐÂY (NẾU DÙNG GITHUB PAGES)
 // Bạn dán đường dẫn Web App của bạn vào giữa hai dấu nháy kép, ví dụ: "https://script.google.com/macros/s/xxxx/exec"
-const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx3fpEkrt2sxZm6FeNieQOP8qcchQ9K0yjwVDD5mY1P79wrOabWJgYxWIEPOPYTHf7QXg/exec";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxXbq6Z1KDkpLUHy7JlbqfvS16gEbrueyT9-dTR_57jzuHHd3ccACtn8Bqdn4W_edSXJQ/exec";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "expenses" | "settlement" | "members" | "settings">("dashboard");
@@ -37,6 +37,11 @@ export default function App() {
 
   const [expenses, setExpenses] = useState<Expense[]>(() => {
     const saved = localStorage.getItem("family_expenses");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [payments, setPayments] = useState<{ month: string; fromId: string; toId: string; isSettled: boolean }[]>(() => {
+    const saved = localStorage.getItem("family_payments");
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -109,6 +114,10 @@ export default function App() {
     localStorage.setItem("family_expenses", JSON.stringify(expenses));
   }, [expenses]);
 
+  useEffect(() => {
+    localStorage.setItem("family_payments", JSON.stringify(payments));
+  }, [payments]);
+
   // Google Sheets Auto-Pull on initial load or credentials change
   useEffect(() => {
     const autoFetchFromSheets = async () => {
@@ -123,11 +132,13 @@ export default function App() {
         if (data.members.length === 0) {
           setMembers([]);
           setExpenses([]);
+          setPayments([]);
           setSheetsSyncStatus("success");
           setSheetsSyncMessage("Đồng bộ thành công! Bảng tính Google Sheets đang trống.");
         } else {
           setMembers(data.members);
           setExpenses(data.expenses);
+          setPayments(data.payments || []);
           setSheetsSyncStatus("success");
           setSheetsSyncMessage(`Đồng bộ Google Sheets thành công! Nạp ${data.members.length} thành viên & ${data.expenses.length} giao dịch.`);
         }
@@ -142,13 +153,17 @@ export default function App() {
   }, [gAppsScriptUrl]);
 
   // Write-through helper function to sync to Sheets in background
-  const syncWithSheetsInBg = async (updatedMembers: Member[], updatedExpenses: Expense[]) => {
+  const syncWithSheetsInBg = async (
+    updatedMembers: Member[], 
+    updatedExpenses: Expense[], 
+    updatedPayments: { month: string; fromId: string; toId: string; isSettled: boolean }[] = payments
+  ) => {
     if (!gAppsScriptUrl) return;
     
     setSheetsSyncStatus("loading");
     setSheetsSyncMessage("Đang tự động ghi đè đồng bộ lên Google Sheets...");
     try {
-      await syncDataToGoogleSheets(gAppsScriptUrl, updatedMembers, updatedExpenses);
+      await syncDataToGoogleSheets(gAppsScriptUrl, updatedMembers, updatedExpenses, updatedPayments);
       setSheetsSyncStatus("success");
       setSheetsSyncMessage("Tự động lưu dữ liệu lên Google Sheets thành công!");
       setTimeout(() => setSheetsSyncStatus("idle"), 3000);
@@ -163,14 +178,14 @@ export default function App() {
   const handleUpdateMember = (updatedMember: Member) => {
     const updated = members.map((m) => (m.id === updatedMember.id ? updatedMember : m));
     setMembers(updated);
-    syncWithSheetsInBg(updated, expenses);
+    syncWithSheetsInBg(updated, expenses, payments);
     showToast(`Đã cập nhật thông tin "${updatedMember.name}" thành công!`, "success");
   };
 
   const handleAddMember = (newMember: Member) => {
     const updated = [...members, newMember];
     setMembers(updated);
-    syncWithSheetsInBg(updated, expenses);
+    syncWithSheetsInBg(updated, expenses, payments);
     showToast(`Đã thêm thành viên "${newMember.name}" thành công!`, "success");
   };
 
@@ -178,7 +193,7 @@ export default function App() {
     const memberName = members.find((m) => m.id === id)?.name || "thành viên";
     const updated = members.filter((m) => m.id !== id);
     setMembers(updated);
-    syncWithSheetsInBg(updated, expenses);
+    syncWithSheetsInBg(updated, expenses, payments);
     showToast(`Đã xoá ${memberName} khỏi danh sách gia đình.`, "info");
   };
 
@@ -190,7 +205,7 @@ export default function App() {
     };
     const updated = [fresh, ...expenses];
     setExpenses(updated);
-    syncWithSheetsInBg(members, updated);
+    syncWithSheetsInBg(members, updated, payments);
     showToast(`Ghi nhận khoản chi "${newExp.title}" thành công!`, "success");
   };
 
@@ -198,7 +213,7 @@ export default function App() {
     const expenseTitle = expenses.find((e) => e.id === id)?.title || "khoản chi";
     const updated = expenses.filter((exp) => exp.id !== id);
     setExpenses(updated);
-    syncWithSheetsInBg(members, updated);
+    syncWithSheetsInBg(members, updated, payments);
     showToast(`Đã xoá khoản chi "${expenseTitle}".`, "info");
   };
 
@@ -210,9 +225,28 @@ export default function App() {
     showToast("Đã lưu cấu hình API Messenger thành công!", "success");
   };
 
-  const handleImportData = (importedMembers: Member[], importedExpenses: Expense[]) => {
+  const handleTogglePayment = (month: string, fromId: string, toId: string) => {
+    setPayments((prev) => {
+      const exists = prev.some((p) => p.month === month && p.fromId === fromId && p.toId === toId);
+      let updated;
+      if (exists) {
+        updated = prev.filter((p) => !(p.month === month && p.fromId === fromId && p.toId === toId));
+      } else {
+        updated = [...prev, { month, fromId, toId, isSettled: true }];
+      }
+      syncWithSheetsInBg(members, expenses, updated);
+      return updated;
+    });
+  };
+
+  const handleImportData = (
+    importedMembers: Member[], 
+    importedExpenses: Expense[],
+    importedPayments: { month: string; fromId: string; toId: string; isSettled: boolean }[] = []
+  ) => {
     setMembers(importedMembers);
     setExpenses(importedExpenses);
+    setPayments(importedPayments);
   };
 
   if (!isLoggedIn) {
@@ -430,8 +464,11 @@ export default function App() {
                 <SettlementView 
                   members={members} 
                   expenses={expenses} 
+                  payments={payments}
+                  onTogglePayment={handleTogglePayment}
                   pageAccessToken={pageAccessToken}
                   pageId={pageId}
+                  showToast={showToast}
                 />
               </motion.div>
             )}
@@ -464,6 +501,7 @@ export default function App() {
                 <Settings 
                   members={members} 
                   expenses={expenses} 
+                  payments={payments}
                   pageAccessToken={pageAccessToken}
                   pageId={pageId}
                   onSaveFbConfig={handleSaveFbConfig}

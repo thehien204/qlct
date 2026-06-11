@@ -13,16 +13,18 @@ import {
 import { downloadFamilyExcel } from "../utils/excel";
 import { 
   syncDataToGoogleSheets, 
-  loadDataFromGoogleSheets 
+  loadDataFromGoogleSheets,
+  PaymentStatus
 } from "../utils/googleSheets";
 
 interface SettingsProps {
   members: Member[];
   expenses: Expense[];
+  payments: PaymentStatus[];
   pageAccessToken: string;
   pageId: string;
   onSaveFbConfig: (token: string, id: string) => void;
-  onImportData: (members: Member[], expenses: Expense[]) => void;
+  onImportData: (members: Member[], expenses: Expense[], payments: PaymentStatus[]) => void;
   gAppsScriptUrl: string;
   setGAppsScriptUrl: (val: string) => void;
   sheetsSyncStatus: "idle" | "loading" | "success" | "error";
@@ -34,6 +36,7 @@ interface SettingsProps {
 export const Settings: React.FC<SettingsProps> = ({
   members,
   expenses,
+  payments,
   pageAccessToken,
   pageId,
   onSaveFbConfig,
@@ -136,7 +139,7 @@ export const Settings: React.FC<SettingsProps> = ({
       return;
     }
     const confirmed = window.confirm(
-      "Bạn có chắc muốn ghi đè toàn bộ dữ liệu hiện tại trên Google Sheet bằng dữ liệu ứng dụng hiện tại? Thao tác này sẽ cập nhật hai tab 'ThanhVien' và 'ChiTieu'."
+      "Bạn có chắc muốn ghi đè toàn bộ dữ liệu hiện tại trên Google Sheet bằng dữ liệu ứng dụng hiện tại? Thao tác này sẽ cập nhật các tab 'ThanhVien', 'ChiTieu' và 'ThanhToan'."
     );
     if (!confirmed) return;
 
@@ -144,8 +147,8 @@ export const Settings: React.FC<SettingsProps> = ({
     setSheetsError("");
     setSheetsSuccess("");
     try {
-      await syncDataToGoogleSheets(gAppsScriptUrl.trim(), members, expenses);
-      setSheetsSuccess(`Đồng bộ dữ liệu thành công! Đã đẩy ${members.length} thành viên và ${expenses.length} giao dịch lên Bảng tính.`);
+      await syncDataToGoogleSheets(gAppsScriptUrl.trim(), members, expenses, payments);
+      setSheetsSuccess(`Đồng bộ dữ liệu thành công! Đã đẩy ${members.length} thành viên, ${expenses.length} giao dịch và ${payments.length} trạng thái thanh toán lên Bảng tính.`);
     } catch (err: any) {
       setSheetsError(err.message || "Lỗi khi cập nhật dữ liệu.");
     } finally {
@@ -164,11 +167,11 @@ export const Settings: React.FC<SettingsProps> = ({
     try {
       const data = await loadDataFromGoogleSheets(gAppsScriptUrl.trim());
       if (data.members.length > 0) {
-        onImportData(data.members, data.expenses);
-        setSheetsSuccess(`Lấy dữ liệu thành công! Đã nạp về ${data.members.length} thành viên gia đình và ${data.expenses.length} giao dịch chi tiêu.`);
+        onImportData(data.members, data.expenses, data.payments || []);
+        setSheetsSuccess(`Lấy dữ liệu thành công! Đã nạp về ${data.members.length} thành viên gia đình, ${data.expenses.length} giao dịch chi tiêu và ${data.payments?.length || 0} trạng thái thanh toán.`);
       } else {
         // If members are empty on sheet, set local state to empty
-        onImportData([], []);
+        onImportData([], [], []);
         setSheetsSuccess("Kết nối thành công! Bảng tính Google Sheets trống, hệ thống nội bộ đã được đồng bộ hóa về dạng rỗng.");
       }
     } catch (err: any) {
@@ -180,7 +183,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
   // Export Data to JSON file
   const handleExportJSON = () => {
-    const dataStr = JSON.stringify({ members, expenses }, null, 2);
+    const dataStr = JSON.stringify({ members, expenses, payments }, null, 2);
     const dataUri = "data:application/json;charset=utf-8," + encodeURIComponent(dataStr);
     
     const exportFileDefaultName = `so_tay_chi_tieu_gia_dinh_${new Date().toISOString().slice(0,10)}.json`;
@@ -203,7 +206,7 @@ export const Settings: React.FC<SettingsProps> = ({
         try {
           const parsed = JSON.parse(event.target?.result as string);
           if (parsed && Array.isArray(parsed.members) && Array.isArray(parsed.expenses)) {
-            onImportData(parsed.members, parsed.expenses);
+            onImportData(parsed.members, parsed.expenses, parsed.payments || []);
             setImportSuccess(true);
           } else {
             setImportError("File JSON không đúng định dạng sao lưu tiêu chuẩn của ứng dụng.");
@@ -601,7 +604,24 @@ export const Settings: React.FC<SettingsProps> = ({
       }
     }
   }
-  return ContentService.createTextOutput(JSON.stringify({ members: members, expenses: expenses }))
+
+  var paymentSheet = ss.getSheetByName("ThanhToan");
+  var payments = [];
+  if (paymentSheet) {
+    var paymentData = paymentSheet.getDataRange().getValues();
+    for (var i = 1; i < paymentData.length; i++) {
+      var row = paymentData[i];
+      if (row[0] && row[1] && row[2]) {
+        payments.push({
+          month: String(row[0]),
+          fromId: String(row[1]),
+          toId: String(row[2]),
+          isSettled: String(row[3]) === "true" || row[3] === true
+        });
+      }
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ members: members, expenses: expenses, payments: payments }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -610,6 +630,7 @@ function doPost(e) {
     var postData = JSON.parse(e.postData.contents);
     var members = postData.members || [];
     var expenses = postData.expenses || [];
+    var payments = postData.payments || [];
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     
     var memberSheet = ss.getSheetByName("ThanhVien");
@@ -638,6 +659,15 @@ function doPost(e) {
         exp.notes,
         exp.createdAt
       ]);
+    }
+
+    var paymentSheet = ss.getSheetByName("ThanhToan");
+    if (!paymentSheet) paymentSheet = ss.insertSheet("ThanhToan");
+    paymentSheet.clear();
+    paymentSheet.appendRow(["Month", "FromId", "ToId", "IsSettled"]);
+    for (var i = 0; i < payments.length; i++) {
+      var p = payments[i];
+      paymentSheet.appendRow([p.month, p.fromId, p.toId, p.isSettled]);
     }
     return ContentService.createTextOutput(JSON.stringify({ success: true }))
       .setMimeType(ContentService.MimeType.JSON);

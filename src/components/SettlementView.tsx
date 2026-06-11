@@ -20,6 +20,7 @@ interface SettlementViewProps {
   expenses: Expense[];
   pageAccessToken?: string;
   pageId?: string;
+  showToast?: (message: string, type: "success" | "error" | "info") => void;
 }
 
 export const SettlementView: React.FC<SettlementViewProps> = ({
@@ -27,10 +28,29 @@ export const SettlementView: React.FC<SettlementViewProps> = ({
   expenses,
   pageAccessToken,
   pageId,
+  showToast,
 }) => {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthStr());
   const [activeRemindIndex, setActiveRemindIndex] = useState<number | null>(null);
   const [tone, setTone] = useState<"funny" | "polite" | "urgent">("funny");
+
+  // Settlement payment state
+  const [settledKeys, setSettledKeys] = useState<string[]>(() => {
+    const saved = localStorage.getItem("family_settled_keys");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const toggleSettled = (fromId: string, toId: string) => {
+    const key = `${selectedMonth}:${fromId}:${toId}`;
+    let updated: string[];
+    if (settledKeys.includes(key)) {
+      updated = settledKeys.filter((k) => k !== key);
+    } else {
+      updated = [...settledKeys, key];
+    }
+    setSettledKeys(updated);
+    localStorage.setItem("family_settled_keys", JSON.stringify(updated));
+  };
 
   // AI loading and data states
   const [aiInsight, setAiInsight] = useState<AIInsight | null>(null);
@@ -281,32 +301,72 @@ export const SettlementView: React.FC<SettlementViewProps> = ({
                     customMsgText = getFallbackReminder(fromM.name, toM.name, set.amount, tone);
                   }
 
+                  const key = `${selectedMonth}:${set.fromId}:${set.toId}`;
+                  const isSettled = settledKeys.includes(key);
+
                   return (
-                    <div key={idx} className="bg-[#0F0F0F] hover:bg-[#181818] border border-[#222] rounded-xl p-3.5 transition-all duration-150">
-                      <div className="flex items-center justify-between">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-extrabold text-rose-450 text-xs shrink-0">{fromM.name}</span>
-                            <span className="text-[10px] text-gray-550 shrink-0">trả cho</span>
-                            <span className="font-extrabold text-emerald-400 text-xs shrink-0">{toM.name}</span>
+                    <div key={idx} className={`bg-[#0F0F0F] hover:bg-[#181818] border rounded-xl p-3.5 transition-all duration-150 flex flex-col gap-3 ${
+                      isSettled ? "border-emerald-900/35 bg-[#0a0f0a]/30" : "border-[#222]"
+                    }`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          {/* Toggle Checkbox Button */}
+                          <button
+                            onClick={() => {
+                              toggleSettled(set.fromId, set.toId);
+                              showToast && showToast(
+                                isSettled 
+                                  ? `Đã mở lại khoản nợ giữa ${fromM.name} và ${toM.name}.` 
+                                  : `Đã đánh dấu ${fromM.name} đã trả tiền cho ${toM.name}!`,
+                                "success"
+                              );
+                            }}
+                            className={`w-6 h-6 rounded-full border flex items-center justify-center cursor-pointer transition-all shrink-0 ${
+                              isSettled 
+                                ? "bg-emerald-600 border-emerald-500 text-white" 
+                                : "border-[#333] hover:border-emerald-500/50 bg-[#0A0A0A] text-transparent hover:text-emerald-500/30"
+                            }`}
+                            title={isSettled ? "Đánh dấu là chưa trả" : "Đánh dấu là đã trả"}
+                          >
+                            <Check className="w-3.5 h-3.5 font-bold" />
+                          </button>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`font-extrabold text-xs shrink-0 ${isSettled ? "text-rose-450/40 line-through" : "text-rose-450"}`}>{fromM.name}</span>
+                              <span className="text-[10px] text-gray-550 shrink-0">trả cho</span>
+                              <span className={`font-extrabold text-xs shrink-0 ${isSettled ? "text-emerald-400/40 line-through" : "text-emerald-405"}`}>{toM.name}</span>
+                              
+                              {/* Status Badge */}
+                              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 border uppercase tracking-wider ${
+                                isSettled 
+                                  ? "bg-emerald-950/30 border-emerald-900/40 text-emerald-450" 
+                                  : "bg-amber-950/20 border-amber-900/30 text-amber-500"
+                              }`}>
+                                {isSettled ? "Đã trả ✓" : "Chưa trả"}
+                              </span>
+                            </div>
+                            <div className={`font-extrabold text-sm mt-0.5 ${isSettled ? "text-white/40 line-through" : "text-white"}`}>{formatVND(set.amount)}</div>
                           </div>
-                          <div className="font-extrabold text-white text-sm mt-1">{formatVND(set.amount)}</div>
                         </div>
 
-                        <button
-                          id={`btn-remind-trigger-${idx}`}
-                          onClick={() => {
-                            setActiveRemindIndex(isReminding ? null : idx);
-                            setSendResult(null);
-                          }}
-                          className={`text-xs font-semibold py-1.5 px-3 rounded-lg flex items-center gap-1 transition-colors cursor-pointer ${
-                            isReminding 
-                              ? "bg-slate-800 text-white" 
-                              : "bg-emerald-950/20 text-emerald-400 hover:bg-emerald-950/35 border border-emerald-900/30"
-                          }`}
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" /> Nhắc nợ
-                        </button>
+                        {/* Remind Button */}
+                        {!isSettled && (
+                          <button
+                            id={`btn-remind-trigger-${idx}`}
+                            onClick={() => {
+                              setActiveRemindIndex(isReminding ? null : idx);
+                              setSendResult(null);
+                            }}
+                            className={`text-xs font-semibold py-1.5 px-3 rounded-lg flex items-center gap-1 transition-colors cursor-pointer ${
+                              isReminding 
+                                ? "bg-slate-800 text-white" 
+                                : "bg-emerald-950/20 text-emerald-400 hover:bg-emerald-950/35 border border-emerald-900/30"
+                            }`}
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" /> Nhắc nợ
+                          </button>
+                        )}
                       </div>
 
                       {/* Interactive drop down reminder sub-panel */}
