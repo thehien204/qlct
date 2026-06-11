@@ -403,9 +403,16 @@ export default function App() {
       });
     });
 
-    setMembers(Array.from(membersMap.values()));
-    setExpenses(Array.from(expensesMap.values()));
-    setPayments(Array.from(paymentsMap.values()));
+    const updatedMembers = Array.from(membersMap.values());
+    const updatedExpenses = Array.from(expensesMap.values());
+    const updatedPayments = Array.from(paymentsMap.values());
+
+    setMembers(updatedMembers);
+    setExpenses(updatedExpenses);
+    setPayments(updatedPayments);
+    
+    // Write imported data directly to H2 database
+    syncWithDbInBg(updatedMembers, updatedExpenses, updatedPayments);
   };
 
   if (!currentUser) {
@@ -700,6 +707,24 @@ export default function App() {
             >
               ✕
             </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Loading Overlay to prevent double clicks */}
+      <AnimatePresence>
+        {dbSyncStatus === "loading" && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center pointer-events-auto"
+          >
+            <div className="bg-[#121212] border border-[#222] p-6 rounded-2xl flex flex-col items-center space-y-4 shadow-2xl max-w-xs text-center">
+              <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin" />
+              <p className="text-white font-bold text-sm">Đang xử lý dữ liệu...</p>
+              <p className="text-gray-400 text-xs">{dbSyncMessage || "Vui lòng đợi trong giây lát..."}</p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
